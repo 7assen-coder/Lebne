@@ -24,6 +24,10 @@ IN_DOMAIN_SEEDS = [
     "changer mot de passe numéro téléphone compte",
     "how do fees work FAQ support help",
     "أشتريت صرفت مصروف دكان",
+    "what languages does Lebne support Arabic French English",
+    "quelles langues supportées arabe français anglais",
+    "KYC documents NNI passport open account Mauritania",
+    "transaction history suspicious report OTP password security",
 ]
 
 

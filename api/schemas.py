@@ -41,7 +41,7 @@ class ChatRequest(BaseModel):
 
     session_id: str
     message: str
-    locale: str | None = Field(default=None, description="ar | fr | en | hassaniya")
+    locale: str | None = Field(default=None, description="ar | fr | en")
     confirmation_token: str | None = None
     two_fa_token: str | None = None
 

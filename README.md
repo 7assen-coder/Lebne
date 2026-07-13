@@ -1,6 +1,6 @@
 # Lebne
 
-Conversational AI agent for a Mauritanian e-wallet: expense extraction, FAQ/RAG, and gated account actions — in Arabic, French, English, and Hassaniya.
+Conversational AI agent for a Mauritanian e-wallet: expense extraction, FAQ/RAG, and gated account actions — in Arabic, French, and English.
 
 > Status: **Option A scaffold** — architecture, config, and stubs. Not production-ready yet.
 
@@ -63,7 +63,9 @@ docs/         Architecture, security, critical params
 
 - [Architecture](docs/architecture.md)
 - [Security & ACL](docs/security.md)
-- [Argon2 & IdP — purpose (deferred)](docs/auth-password-idp.md)
+- [Model operations](docs/model-ops.md)
+- [Dataset schema](data/README.md)
+- [Argon2 & IdP — purpose](docs/auth-password-idp.md)
 - [Chat prompt/output security](docs/chat-security.md)
 - [Roadmap / where to go](docs/roadmap.md)
 - [Critical parameters](docs/critical-params.md)

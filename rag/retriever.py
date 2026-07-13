@@ -20,7 +20,7 @@ class FaqRetriever:
             },
             {
                 "id": "faq-languages",
-                "text": "Lebne support agent understands Arabic, French, English, and Hassaniya.",
+                "text": "Lebne support agent understands Arabic, French, and English.",
             },
         ]
 

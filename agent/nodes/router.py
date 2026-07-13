@@ -16,7 +16,19 @@ class IntentRouter:
     KEYWORDS = {
         Intent.EXPENSE_EXTRACTION: ("dépensé", "depense", "spent", "أشتريت", "صرفت", "mr u", "mru", "ouguiya"),
         Intent.ACCOUNT_ACTION: ("solde", "balance", "password", "mot de passe", "numéro", "phone", "historique"),
-        Intent.FAQ: ("comment", "how", "frais", "fees", "aide", "help", "ما هو", "كيف"),
+        Intent.FAQ: (
+            "comment",
+            "how",
+            "frais",
+            "fees",
+            "aide",
+            "help",
+            "support",
+            "language",
+            "langues",
+            "ما هو",
+            "كيف",
+        ),
     }
 
     def __init__(self, llm: LLMClient) -> None:

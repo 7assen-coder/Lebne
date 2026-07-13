@@ -10,12 +10,14 @@ Stack: FastAPI backend · Flutter UI **last**.
 - [x] LangGraph StateGraph agent runtime
 - [x] Embedding guardrail + Qdrant FAQ indexer/retriever
 - [x] Eval runner (`scripts/run_eval.py`)
+- [x] Local LLM path: Ollama + `qwen2.5:3b` (prod remains vLLM)
+- [x] Expanded FAQ + starter domain training JSONL
 
 ## Next (before Flutter)
-1. Point `LEBNE_OIDC_*` at your real IdP and test login
-2. `docker compose up -d postgres redis qdrant` → `scripts/index_faq.py --recreate`
-3. Serve model with vLLM (or Ollama locally) and set `LEBNE_LLM_*`
-4. Run `scripts/run_eval.py` and expand FAQ/Hassaniya data
+1. Finish/verify `bash scripts/bootstrap_llm.sh` (model pulled)
+2. Run API + smoke `POST /v1/chat` with Keycloak token
+3. Grow reviewed AR/FR/EN datasets toward fine-tune size (Hassaniya deferred)
+4. When GPU host ready: QLoRA → vLLM production serving
 5. Alembic migrations (optional hardening)
 
 ## Last

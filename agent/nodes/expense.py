@@ -17,7 +17,7 @@ class ExpenseExtractionAgent:
         messages = build_llm_messages(
             task_system=(
                 "Extract expense fields as JSON: amount, currency, merchant, category, date. "
-                "Languages: ar, fr, en, hassaniya. If incomplete, ask one clarifying question. "
+                "Languages: ar, fr, en. If incomplete, ask one clarifying question. "
                 "Do not request full card numbers or passwords."
             ),
             user_text=message,

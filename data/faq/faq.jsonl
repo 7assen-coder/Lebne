@@ -1,3 +1,12 @@
-{"id": "faq-001", "locale": "en", "question": "What languages does Lebne support?", "answer": "Arabic, French, English, and Hassaniya.", "version": 1}
-{"id": "faq-002", "locale": "fr", "question": "Comment voir les frais de transfert ?", "answer": "Les frais s'affichent dans l'aperçu avant confirmation dans l'application.", "version": 1}
-{"id": "faq-003", "locale": "ar", "question": "كيف أتحقق من رصيدي؟", "answer": "يمكنك طلب الرصيد عبر التطبيق أو المساعد بعد تسجيل الدخول.", "version": 1}
+{"id": "faq-001", "locale": "en", "question": "What languages does Lebne support?", "answer": "Lebne support works in Arabic, French, and English.", "version": 2}
+{"id": "faq-002", "locale": "fr", "question": "Comment voir les frais de transfert ?", "answer": "Les frais s'affichent dans l'aperçu avant confirmation dans l'application Lebne.", "version": 1}
+{"id": "faq-003", "locale": "ar", "question": "كيف أتحقق من رصيدي؟", "answer": "يمكنك طلب الرصيد عبر التطبيق أو المساعد بعد تسجيل الدخول. لن يُعرض الرصيد دون مصادقة.", "version": 1}
+{"id": "faq-004", "locale": "fr", "question": "Quels documents pour ouvrir un compte ?", "answer": "Une pièce d'identité valide (NNI / passeport) et un numéro de téléphone mauritanien actif sont requis pour le KYC.", "version": 1}
+{"id": "faq-005", "locale": "en", "question": "What is the currency used in Lebne?", "answer": "Lebne wallet balances and transfers use MRU (Mauritanian ouguiya).", "version": 1}
+{"id": "faq-006", "locale": "ar", "question": "هل يمكنني التحويل إلى رقم آخر؟", "answer": "نعم، يمكنك التحويل إلى محفظة أخرى بعد التأكيد في التطبيق. تظهر الرسوم قبل الإرسال.", "version": 2}
+{"id": "faq-007", "locale": "fr", "question": "Que faire si j'oublie mon mot de passe ?", "answer": "Utilisez la réinitialisation sécurisée dans l'app. Le chat ne change jamais le mot de passe sans confirmation et 2FA.", "version": 1}
+{"id": "faq-008", "locale": "en", "question": "Are transfers instant?", "answer": "Most Lebne wallet-to-wallet transfers are near-instant after confirmation. Bank corridors may take longer.", "version": 1}
+{"id": "faq-009", "locale": "ar", "question": "هل يمكنني إلغاء تحويل؟", "answer": "بعد التأكيد النهائي قد لا يمكن الإلغاء. راجع حالة العملية في سجل المعاملات.", "version": 1}
+{"id": "faq-010", "locale": "fr", "question": "Lebne est-il disponible hors Mauritanie ?", "answer": "Le service est conçu pour les utilisateurs en Mauritanie. Les corridors internationaux dépendent des partenaires activés.", "version": 1}
+{"id": "faq-011", "locale": "en", "question": "How do I report a suspicious transaction?", "answer": "Freeze activity from the app security section and contact Lebne support with the transaction reference. Never share OTP or password in chat.", "version": 1}
+{"id": "faq-012", "locale": "ar", "question": "ما هي المصاريف؟", "answer": "المصاريف هي المبالغ التي تنفقها (متجر، نقل، إلخ). يمكن للمساعد تسجيلها إذا قدّمت المبلغ واسم المتجر.", "version": 2}
