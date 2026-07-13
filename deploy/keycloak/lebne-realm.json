@@ -1,0 +1,51 @@
+{
+  "realm": "lebne",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "end_user", "description": "Lebne end user" },
+      { "name": "admin", "description": "Lebne admin" }
+    ]
+  },
+  "users": [
+    {
+      "username": "demo",
+      "enabled": true,
+      "email": "demo@lebne.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "User",
+      "realmRoles": ["end_user"],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "DemoPass123!",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "lebne-api",
+      "name": "Lebne API",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://localhost:*", "http://127.0.0.1:*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "access.token.lifespan": "3600"
+      },
+      "protocol": "openid-connect",
+      "fullScopeAllowed": true
+    }
+  ]
+}

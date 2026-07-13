@@ -1,0 +1,58 @@
+[project]
+name = "lebne"
+version = "0.1.0"
+description = "Conversational AI agent for a Mauritanian e-wallet (expense extraction, FAQ/RAG, account actions)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "pydantic>=2.9.0",
+  "pydantic-settings>=2.6.0",
+  "httpx>=0.27.0",
+  "langgraph>=0.2.0",
+  "langchain-core>=0.3.0",
+  "qdrant-client>=1.12.0",
+  "sentence-transformers>=3.0.0",
+  "python-dotenv>=1.0.0",
+  "structlog>=24.4.0",
+  "PyJWT>=2.9.0",
+  "redis>=5.0.0",
+  "sqlalchemy>=2.0.36",
+  "psycopg[binary]>=3.2.0",
+  "argon2-cffi>=23.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.8.0",
+  "mypy>=1.13.0",
+]
+training = [
+  "torch>=2.4.0",
+  "transformers>=4.46.0",
+  "peft>=0.13.0",
+  "datasets>=3.0.0",
+  "bitsandbytes>=0.44.0",
+  "accelerate>=1.0.0",
+  "trl>=0.12.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["api", "agent", "guardrail", "rag", "training", "wallet"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

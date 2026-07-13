@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Models & data artifacts (keep schemas / small samples)
+models/
+*.gguf
+*.safetensors
+*.bin
+data/raw/
+data/processed/
+!data/**/.gitkeep
+!data/faq/.gitkeep
+!data/datasets/.gitkeep
+
+# Qdrant local storage
+qdrant_storage/
+
+# Eval / training outputs
+training/outputs/
+eval/results/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+*.log
+*.db
+lebne_wallet.db
+test_lebne_wallet.db

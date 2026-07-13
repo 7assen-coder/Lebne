@@ -1,0 +1,98 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${LEBNE_API_PORT:-8000}:8000"
+    env_file:
+      - .env.example
+    environment:
+      LEBNE_QDRANT_URL: http://qdrant:6333
+      LEBNE_LLM_BASE_URL: http://vllm:8000/v1
+      LEBNE_LLM_PROVIDER: vllm
+      LEBNE_REDIS_URL: redis://redis:6379/0
+      LEBNE_SESSION_BACKEND: redis
+      LEBNE_BACKEND_API_BASE_URL: http://api:8000
+      LEBNE_WALLET_INTERNAL_MODE: "true"
+      LEBNE_DATABASE_URL: postgresql+psycopg://lebne:lebne@postgres:5432/lebne
+    depends_on:
+      - qdrant
+      - redis
+      - postgres
+      # Uncomment when a production model image/weights are ready:
+      # - vllm
+    volumes:
+      - ./:/app
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lebne
+      POSTGRES_PASSWORD: lebne
+      POSTGRES_DB: lebne
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+
+  # Local Identity Provider for step-1 OIDC (replace with bank IdP in real prod).
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/keycloak:/opt/keycloak/data/import
+
+  # Production LLM serving (long-term default).
+  # Requires GPU host + model path mounted or pulled.
+  # Enable with: docker compose --profile llm up
+  vllm:
+    profiles: ["llm"]
+    image: vllm/vllm-openai:latest
+    ports:
+      - "8001:8000"
+    environment:
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    volumes:
+      - ${LEBNE_MODEL_PATH:-./models}:/models
+    command:
+      - "--model"
+      - "/models/lebne-qwen2.5-3b"
+      - "--served-model-name"
+      - "lebne-qwen2.5-3b"
+      - "--dtype"
+      - "auto"
+      - "--max-model-len"
+      - "4096"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
+volumes:
+  qdrant_storage:
+  redis_data:
+  postgres_data:
