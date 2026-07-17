@@ -111,6 +111,14 @@ async def on_startup() -> None:
         init_db()
     init_contrib_db()
     Path("media/contrib_audio").mkdir(parents=True, exist_ok=True)
+    try:
+        from contrib.object_store import get_object_store, reset_object_store
+
+        reset_object_store()
+        store_health = get_object_store().health()
+        log.info("object_store_ready", **store_health)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("object_store_init_failed", error=str(exc)[:200])
     if settings.env == "production":
         weak = ("CHANGE_ME", "dev_only", "lebne_jwt_secret")
         secret = settings.jwt_secret or ""

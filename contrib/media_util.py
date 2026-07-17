@@ -1,4 +1,4 @@
-"""Safe media path helpers for crowd audio (disk + Neon blob)."""
+"""Safe media helpers for crowd audio (MIME / legacy path names)."""
 
 from __future__ import annotations
 
@@ -15,6 +15,17 @@ _AUDIO_MIME = {
     ".ogg": "audio/ogg",
     ".m4a": "audio/mp4",
     ".mp4": "audio/mp4",
+    ".aac": "audio/aac",
+}
+
+EXT_FOR_MIME = {
+    "audio/webm": ".webm",
+    "audio/wav": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".m4a",
+    "audio/aac": ".aac",
+    "video/webm": ".webm",
 }
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
@@ -43,8 +54,12 @@ def audio_media_type(name_or_path: str | Path) -> str:
     return _AUDIO_MIME.get(Path(name_or_path).suffix.lower(), "application/octet-stream")
 
 
+def mime_for_filename(name: str) -> str:
+    return audio_media_type(name)
+
+
 def resolve_audio_file(raw: str | None) -> Path | None:
-    """Return the on-disk audio file for a stored path, or None."""
+    """Legacy: on-disk file under MEDIA_DIR (not durable on Render)."""
     name = audio_basename(raw)
     if not name:
         return None
@@ -62,7 +77,6 @@ def resolve_audio_file(raw: str | None) -> Path | None:
 
 
 def safe_audio_path(raw: str | None) -> str | None:
-    """Accept a basename that exists on disk under MEDIA_DIR (legacy helper)."""
     candidate = resolve_audio_file(raw)
     if not candidate:
         return None

@@ -1,0 +1,151 @@
+"use client";
+
+import { useRef, useState, type ChangeEvent } from "react";
+import { pickRecorderMime, uploadVoiceBlob } from "@/lib/voice-upload";
+
+type Props = {
+  audioId: string | null;
+  onAudioId: (id: string | null) => void;
+  onTranscript?: (text: string) => void;
+  withStt?: boolean;
+  label?: string;
+};
+
+export function VoiceRecorder({
+  audioId,
+  onAudioId,
+  onTranscript,
+  withStt = true,
+  label = "Voice",
+}: Props) {
+  const [recording, setRecording] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState("");
+  const [failed, setFailed] = useState(false);
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const mimeRef = useRef("audio/webm");
+
+  async function handleBlob(blob: Blob) {
+    setBusy(true);
+    setHint("Uploading…");
+    setFailed(false);
+    try {
+      const result = await uploadVoiceBlob(blob, { withStt });
+      onAudioId(result.audioId);
+      if (result.transcript && onTranscript) onTranscript(result.transcript);
+      setHint("Voice saved");
+    } catch {
+      setHint("Voice failed — try again or pick a file");
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleRecord() {
+    if (busy) return;
+    if (recording && mediaRef.current) {
+      mediaRef.current.stop();
+      setRecording(false);
+      return;
+    }
+    const mime = pickRecorderMime();
+    if (!mime) {
+      setHint("Recording unsupported — pick an audio file");
+      fileRef.current?.click();
+      return;
+    }
+    mimeRef.current = mime.split(";")[0];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream, { mimeType: mime });
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        void handleBlob(new Blob(chunksRef.current, { type: mimeRef.current }));
+      };
+      mediaRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setHint("Listening… tap again to stop");
+    } catch {
+      setHint("Mic blocked — pick an audio file instead");
+      fileRef.current?.click();
+    }
+  }
+
+  function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    void handleBlob(file);
+  }
+
+  return (
+    <div className="rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/8 px-4 py-4 sm:px-5">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--teal)]">{label}</p>
+      <p className="mt-2 text-sm text-[var(--muted)] sm:text-base">
+        {audioId
+          ? "Clip ready — play below, or re-record / pick a file."
+          : "Record on phone or laptop, or choose an audio file."}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={recording ? "btn-primary px-5 py-2.5 text-sm" : "btn-ghost px-5 py-2.5 text-sm"}
+          disabled={busy}
+          onClick={() => void toggleRecord()}
+        >
+          {recording ? "Stop" : audioId ? "Re-record" : "Record"}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost px-5 py-2.5 text-sm"
+          disabled={busy || recording}
+          onClick={() => fileRef.current?.click()}
+        >
+          Pick file
+        </button>
+        {audioId ? (
+          <button
+            type="button"
+            className="btn-ghost px-5 py-2.5 text-sm"
+            disabled={busy}
+            onClick={() => {
+              onAudioId(null);
+              setHint("");
+              setFailed(false);
+            }}
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="audio/*,.m4a,.mp3,.wav,.webm,.ogg,.aac"
+        capture="user"
+        className="hidden"
+        onChange={onFile}
+      />
+      {hint ? (
+        <p className={`mt-2 text-sm ${failed ? "text-[#e85d4c]" : "text-[var(--muted)]"}`}>{hint}</p>
+      ) : null}
+      {audioId ? (
+        <audio
+          key={audioId}
+          controls
+          preload="metadata"
+          className="mt-3 w-full max-w-xl"
+          src={`/api/audio/${encodeURIComponent(audioId)}`}
+        />
+      ) : null}
+    </div>
+  );
+}

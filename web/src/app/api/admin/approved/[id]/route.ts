@@ -28,11 +28,11 @@ export async function POST(
     body?.answer == null || body?.answer === ""
       ? null
       : String(body.answer).slice(0, 4000);
-  const audioPath =
-    typeof body?.audioPath === "string"
-      ? body.audioPath.slice(0, 512)
-      : typeof body?.audio_path === "string"
-        ? body.audio_path.slice(0, 512)
+  const audioId =
+    typeof body?.audioId === "string"
+      ? body.audioId.slice(0, 36)
+      : typeof body?.audio_id === "string"
+        ? body.audio_id.slice(0, 36)
         : undefined;
   const clearAudio = Boolean(body?.clearAudio || body?.clear_audio);
   const { res, data } = await backendFetch(
@@ -43,7 +43,7 @@ export async function POST(
       body: JSON.stringify({
         text,
         answer,
-        audio_path: clearAudio ? null : audioPath,
+        audio_id: clearAudio ? null : audioId,
         clear_audio: clearAudio,
       }),
     },

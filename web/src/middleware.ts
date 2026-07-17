@@ -27,5 +27,7 @@ export const config = {
     "/contribute/:path*",
     "/api/admin/:path*",
     "/api/contribute/:path*",
+    "/api/audio",
+    "/api/audio/:path*",
   ],
 };

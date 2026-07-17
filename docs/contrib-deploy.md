@@ -64,7 +64,7 @@ uvicorn api.main:app --host 0.0.0.0 --port $PORT
 python scripts/seed_contrib_queue.py
 ```
 
-6. Audio on free Render disk is ephemeral — for production voice retention, point media to S3/R2 (follow-up). Text STT still works if you only need drafts.
+6. **Voice storage:** durable via `contrib_audio_assets` + Cloudflare R2 (set `LEBNE_R2_*`) or Neon payloads when R2 is unset. Do not rely on Render disk. Migrate legacy blobs once: `python scripts/migrate_audio_blobs_to_assets.py`. Clients use `audioId` (record / file picker on phone & laptop).
 
 ## Contributor instructions (short)
 

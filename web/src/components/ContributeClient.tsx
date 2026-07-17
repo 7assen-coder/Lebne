@@ -1,8 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ProgressRing } from "./ProgressRing";
+import { VoiceRecorder } from "./VoiceRecorder";
 
 const VIEW_LOCALES = ["fr", "ar", "en"] as const;
 
@@ -27,23 +28,18 @@ export function ContributeClient({
   const [prompt, setPrompt] = useState<Prompt | null>(null);
   const [progress, setProgress] = useState<Progress>({ done: 0, total: 0, percent: 0 });
   const [hassaniya, setHassaniya] = useState("");
-  const [audioPath, setAudioPath] = useState<string | null>(null);
+  const [audioId, setAudioId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewLoading, setViewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [voiceHint, setVoiceHint] = useState("");
   const [doneAll, setDoneAll] = useState(false);
-  const mediaRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
 
-  const canSubmit = hassaniya.trim().length >= 2 || Boolean(audioPath);
+  const canSubmit = hassaniya.trim().length >= 2 || Boolean(audioId);
 
   const loadNext = useCallback(async (view: string) => {
     setLoading(true);
     setHassaniya("");
-    setAudioPath(null);
-    setVoiceHint("");
+    setAudioId(null);
     const res = await fetch(`/api/contribute/next?view=${view}`);
     const data = await res.json();
     setLoading(false);
@@ -81,7 +77,7 @@ export function ContributeClient({
       body: JSON.stringify({
         promptId: prompt.id,
         text: hassaniya.trim() || undefined,
-        audioPath: audioPath || undefined,
+        audioId: audioId || undefined,
       }),
     });
     setSaving(false);
@@ -100,53 +96,6 @@ export function ContributeClient({
     setSaving(false);
     if (!res.ok) return;
     await loadNext(viewLocale);
-  }
-
-  async function uploadVoice(blob: Blob) {
-    setVoiceHint("Saving…");
-    const fd = new FormData();
-    fd.append("audio", blob, "clip.webm");
-    fd.append("field", "question");
-    const res = await fetch("/api/contribute/stt", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok) {
-      setVoiceHint("Voice failed — try again");
-      return;
-    }
-    setAudioPath(data.audio_path || data.audioPath || null);
-    if (data.transcript) setHassaniya((t) => t || data.transcript);
-    setVoiceHint("Voice saved");
-  }
-
-  async function toggleRecord() {
-    if (recording && mediaRef.current) {
-      mediaRef.current.stop();
-      setRecording(false);
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
-      chunksRef.current = [];
-      rec.ondataavailable = (e) => {
-        if (e.data.size) chunksRef.current.push(e.data);
-      };
-      rec.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        void uploadVoice(new Blob(chunksRef.current, { type: "audio/webm" }));
-      };
-      mediaRef.current = rec;
-      rec.start();
-      setRecording(true);
-      setVoiceHint("Listening… tap again to stop");
-    } catch {
-      setVoiceHint("Mic blocked");
-    }
-  }
-
-  function clearVoice() {
-    setAudioPath(null);
-    setVoiceHint("");
   }
 
   async function logout() {
@@ -315,77 +264,15 @@ export function ContributeClient({
                 />
               </div>
 
-              {/* Voice */}
-              <div
-                className="action-tile"
-                data-kind="voice"
-                data-active={Boolean(audioPath) || recording}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="type-label text-[var(--teal)]">Voice</p>
-                    <p className="type-ui text-[var(--muted)]" style={{ marginTop: "0.25rem" }}>
-                      Record how you say it
-                    </p>
-                  </div>
-                  <span
-                    className="rounded-full px-3 py-1 font-bold"
-                    style={{
-                      fontSize: "var(--label-text)",
-                      background:
-                        audioPath || recording ? "rgba(30,200,176,0.25)" : "rgba(255,255,255,0.06)",
-                      color: audioPath || recording ? "var(--teal)" : "var(--muted)",
-                    }}
-                  >
-                    {recording ? "Recording" : audioPath ? "Saved" : "Optional"}
-                  </span>
-                </div>
-
-                <div
-                  className="flex flex-1 flex-col items-center justify-center"
-                  style={{ gap: "var(--space-3)", paddingBlock: "var(--space-3)" }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => void toggleRecord()}
-                    className="mic-btn"
-                    style={{
-                      background: recording
-                        ? "#e85d4c"
-                        : audioPath
-                          ? "rgba(30,200,176,0.2)"
-                          : "rgba(255,255,255,0.06)",
-                      color: recording ? "#fff" : audioPath ? "var(--teal)" : "var(--ink)",
-                      boxShadow: recording
-                        ? "0 0 40px rgba(232,93,76,0.45)"
-                        : audioPath
-                          ? "0 0 0 2px rgba(30,200,176,0.45)"
-                          : "0 0 0 2px var(--line)",
-                    }}
-                    aria-label={recording ? "Stop recording" : "Record voice"}
-                  >
-                    {recording ? (
-                      <span className="block h-4 w-4 rounded-sm bg-white" />
-                    ) : (
-                      <svg
-                        viewBox="0 0 24 24"
-                        className="h-[45%] w-[45%]"
-                        fill="currentColor"
-                        aria-hidden
-                      >
-                        <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z" />
-                      </svg>
-                    )}
-                  </button>
-                  <p className="type-ui text-center text-[var(--muted)]">
-                    {voiceHint || (recording ? "Tap to stop" : "Tap mic to record")}
-                  </p>
-                  {audioPath && !recording && (
-                    <button type="button" className="btn-ghost" onClick={clearVoice}>
-                      Clear voice
-                    </button>
-                  )}
-                </div>
+              {/* Voice — phone / laptop / file */}
+              <div className="action-tile" data-kind="voice" data-active={Boolean(audioId)}>
+                <VoiceRecorder
+                  audioId={audioId}
+                  onAudioId={setAudioId}
+                  onTranscript={(t) => setHassaniya((prev) => prev || t)}
+                  withStt
+                  label="Voice"
+                />
               </div>
             </div>
 

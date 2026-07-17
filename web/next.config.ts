@@ -20,7 +20,8 @@ const securityHeaders: { key: string; value: string }[] = [
       "img-src 'self' data: blob:",
       "media-src 'self' blob:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      // R2 presigned PUT hosts (account-specific subdomain)
+      "connect-src 'self' https://*.r2.cloudflarestorage.com https://*.cloudflarestorage.com",
       "worker-src 'self' blob:",
       "frame-ancestors 'none'",
       "base-uri 'self'",

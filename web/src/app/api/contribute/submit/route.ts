@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     prompt_id: body?.promptId,
     text: body?.text || body?.question,
     answer: body?.answer,
-    audio_path: body?.audioPath,
+    audio_id: body?.audioId || body?.audio_id || null,
     note: body?.note,
   };
   const { res, data } = await backendFetch("/crowd/v1/submissions", {

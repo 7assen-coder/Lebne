@@ -56,6 +56,7 @@ def _ensure_columns(engine: Engine) -> None:
         ("contrib_prompt_items", "assistant_text", "TEXT"),
         ("contrib_prompt_items", "translations_json", "TEXT"),
         ("contrib_submissions", "answer_text", "TEXT"),
+        ("contrib_submissions", "audio_id", "VARCHAR(36)"),
         ("contrib_users", "role", "VARCHAR(32)"),
         ("contrib_users", "token_version", "INTEGER DEFAULT 0"),
         ("contrib_user_progress", "skipped", "BOOLEAN DEFAULT FALSE"),

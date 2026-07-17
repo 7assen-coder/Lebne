@@ -8,7 +8,6 @@ Roles: owner / reviewer / contributor
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal
@@ -21,6 +20,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from api.config import Settings, get_settings
+from api.security.rate_limit import rate_limiter
+from contrib.audio_service import (
+    asset_out,
+    complete_asset,
+    create_uploading_asset,
+    link_asset_to_submission,
+    load_ready_bytes,
+    playable_audio_id_for_submission,
+    put_bytes_and_ready,
+    resolve_ready_audio_id,
+)
 from contrib.crowd_auth import (
     effective_role,
     get_crowd_user,
@@ -29,7 +39,6 @@ from contrib.crowd_auth import (
     require_reviewer_or_owner,
 )
 from contrib.db import get_contrib_session
-from api.security.rate_limit import rate_limiter
 from contrib.export_util import (
     LOCALES,
     append_approved_row,
@@ -38,21 +47,13 @@ from contrib.export_util import (
     row_from_submission,
     upsert_approved_row,
 )
-from contrib.media_util import (
-    MAX_AUDIO_BYTES,
-    MEDIA_DIR,
-    audio_basename,
-    audio_media_type,
-    portable_audio_path,
-    resolve_audio_file,
-)
+from contrib.media_util import MAX_AUDIO_BYTES, MEDIA_DIR
 from contrib.models import (
     CONSENSUS_NEEDED,
     ROLE_CONTRIBUTOR,
     ROLE_OWNER,
     ROLE_REVIEWER,
     REVIEWER_DAILY_LIMIT,
-    AudioBlob,
     AuditLog,
     CrowdUser,
     PromptItem,
@@ -101,7 +102,8 @@ class SubmitBody(BaseModel):
     prompt_id: int
     text: str | None = Field(default=None, max_length=2000)
     answer: str | None = Field(default=None, max_length=4000)
-    audio_path: str | None = Field(default=None, max_length=512)
+    audio_id: str | None = Field(default=None, max_length=36)
+    audio_path: str | None = Field(default=None, max_length=512)  # legacy ignored if audio_id set
     note: str | None = Field(default=None, max_length=300)
     question: str | None = None
 
@@ -120,48 +122,18 @@ class RoleBody(BaseModel):
 class ApprovedEditBody(BaseModel):
     text: str = Field(min_length=2, max_length=2000)
     answer: str | None = Field(default=None, max_length=4000)
+    audio_id: str | None = Field(default=None, max_length=36)
     audio_path: str | None = Field(default=None, max_length=512)
     clear_audio: bool = False
 
 
-def _store_audio_blob(db: Session, name: str, data: bytes, content_type: str) -> str:
-    existing = db.get(AudioBlob, name)
-    if existing:
-        existing.data = data
-        existing.content_type = content_type
-    else:
-        db.add(AudioBlob(name=name, data=data, content_type=content_type))
-    db.flush()
-    return portable_audio_path(name)
+class AudioPresignBody(BaseModel):
+    content_type: str = Field(default="audio/webm", max_length=64)
+    byte_size: int = Field(default=0, ge=0, le=MAX_AUDIO_BYTES)
 
 
-def _resolve_audio_ref(db: Session, raw: str | None) -> str | None:
-    """Accept audio if the file or Neon blob exists; return portable path."""
-    name = audio_basename(raw)
-    if not name:
-        return None
-    if resolve_audio_file(name) is not None:
-        return portable_audio_path(name)
-    if db.get(AudioBlob, name) is not None:
-        return portable_audio_path(name)
-    return None
-
-
-def _load_audio_bytes(db: Session, raw: str | None) -> tuple[bytes, str] | None:
-    name = audio_basename(raw)
-    if not name:
-        return None
-    path = resolve_audio_file(name)
-    if path is not None:
-        return path.read_bytes(), audio_media_type(path)
-    blob = db.get(AudioBlob, name)
-    if blob is not None and blob.data:
-        return bytes(blob.data), blob.content_type or audio_media_type(name)
-    return None
-
-
-def _playable_audio_path(db: Session, raw: str | None) -> str | None:
-    return _resolve_audio_ref(db, raw)
+class AudioCompleteBody(BaseModel):
+    audio_id: str = Field(min_length=8, max_length=36)
 
 
 def _user_out(user: CrowdUser) -> dict:
@@ -173,6 +145,36 @@ def _user_out(user: CrowdUser) -> dict:
         "role": role,
         "isAdmin": role == ROLE_OWNER,
         "isReviewer": role in (ROLE_OWNER, ROLE_REVIEWER),
+    }
+
+
+def _submission_audio_fields(db: Session, s: Submission) -> dict:
+    aid = playable_audio_id_for_submission(db, s)
+    return {"audioId": aid, "hasAudio": bool(aid), "audioPath": None}
+
+
+def _submission_audio_item(db: Session, s: Submission) -> dict:
+    fields = _submission_audio_fields(db, s)
+    return {
+        "id": str(s.id),
+        "locale": s.target_locale,
+        "text": s.text,
+        "answer": s.answer_text,
+        **fields,
+        "note": s.contributor_note,
+        "status": s.status,
+        "approvals": _approvals_payload(db, s.id, s.text),
+        "user": {
+            "id": s.user.id if s.user else None,
+            "name": s.user.name if s.user else "unknown",
+            "email": s.user.email if s.user else "",
+        },
+        "prompt": {
+            "sourceText": s.prompt.source_text if s.prompt else "",
+            "sourceLocale": s.prompt.source_locale if s.prompt else "",
+            "intent": s.prompt.intent if s.prompt else "",
+            "importId": s.prompt.import_id if s.prompt else "",
+        },
     }
 
 
@@ -536,6 +538,85 @@ def progress(
     return {"progress": _progress(db, user.id), "targetLocale": TARGET_LOCALE}
 
 
+@router.post("/audio/presign")
+def audio_presign(
+    body: AudioPresignBody,
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> dict:
+    try:
+        asset, payload = create_uploading_asset(
+            db, user, content_type=body.content_type, byte_size=body.byte_size
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True, **payload, "audioId": asset.id}
+
+
+@router.post("/audio/complete")
+def audio_complete(
+    body: AudioCompleteBody,
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> dict:
+    try:
+        asset = complete_asset(db, user, body.audio_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True, **asset_out(asset)}
+
+
+@router.post("/audio")
+async def audio_upload(
+    request: Request,
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+    audio: UploadFile = File(...),
+) -> dict:
+    """Multipart fallback when R2 presign is unavailable (Neon backend)."""
+    rate_limiter.check(
+        f"crowd-stt:{user.id}:{_client_ip(request)}",
+        settings,
+        limit=settings.crowd_stt_rate_limit,
+    )
+    content = await audio.read()
+    try:
+        asset = put_bytes_and_ready(
+            db, user, content, audio.content_type or "audio/webm"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    db.commit()
+    return {"ok": True, **asset_out(asset), "audioId": asset.id}
+
+
+@router.get("/audio/{audio_id}")
+def audio_stream(
+    audio_id: str,
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> Response:
+    """Authenticated stream for any logged-in user who can access the asset."""
+    _ = user
+    loaded = load_ready_bytes(db, audio_id)
+    if not loaded:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    data, mime = loaded
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{audio_id}.audio"',
+        },
+    )
+
+
 @router.post("/submissions")
 def submit(
     body: SubmitBody,
@@ -549,11 +630,13 @@ def submit(
     utterance = (body.text or body.question or "").strip()
     answer = (body.answer or "").strip() or None
 
-    audio_path = _resolve_audio_ref(db, body.audio_path)
+    audio_id = resolve_ready_audio_id(db, body.audio_id, require_owner_id=user.id)
+    if body.audio_id and not audio_id:
+        raise HTTPException(status_code=400, detail="Audio not ready — re-record")
 
-    if len(utterance) < 2 and not audio_path:
+    if len(utterance) < 2 and not audio_id:
         raise HTTPException(status_code=400, detail="Type Hassaniya or record voice")
-    if len(utterance) < 2 and audio_path:
+    if len(utterance) < 2 and audio_id:
         utterance = "[voice]"
 
     def _mark_contributed() -> None:
@@ -576,7 +659,6 @@ def submit(
                 )
             )
 
-    # Resolve progress race before inserting the submission (rollback would drop it)
     _mark_contributed()
     try:
         db.flush()
@@ -584,18 +666,20 @@ def submit(
         db.rollback()
         _mark_contributed()
 
-    db.add(
-        Submission(
-            prompt_id=prompt.id,
-            user_id=user.id,
-            target_locale=TARGET_LOCALE,
-            text=utterance,
-            answer_text=answer,
-            audio_path=audio_path,
-            contributor_note=(body.note or "").strip() or None,
-            status="pending",
-        )
+    sub = Submission(
+        prompt_id=prompt.id,
+        user_id=user.id,
+        target_locale=TARGET_LOCALE,
+        text=utterance,
+        answer_text=answer,
+        audio_path=None,
+        audio_id=audio_id,
+        contributor_note=(body.note or "").strip() or None,
+        status="pending",
     )
+    db.add(sub)
+    db.flush()
+    link_asset_to_submission(db, audio_id, sub)
     db.commit()
     return {"ok": True, "progress": _progress(db, user.id)}
 
@@ -670,45 +754,47 @@ async def stt(
     audio: UploadFile = File(...),
     field: str = Form(default="question"),
 ) -> dict:
+    """Upload voice + optional Whisper draft. Stores durable AudioAsset (R2 or Neon)."""
     rate_limiter.check(
         f"crowd-stt:{user.id}:{_client_ip(request)}",
         settings,
         limit=settings.crowd_stt_rate_limit,
     )
-    MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    suffix = Path(audio.filename or "clip.webm").suffix or ".webm"
-    if suffix.lower() not in {".webm", ".wav", ".mp3", ".m4a", ".ogg", ".mp4"}:
-        suffix = ".webm"
-    dest = MEDIA_DIR / f"{uuid.uuid4().hex}{suffix}"
     content = await audio.read()
-    if len(content) < 32:
-        raise HTTPException(status_code=400, detail="Empty audio")
-    if len(content) > MAX_AUDIO_BYTES:
-        raise HTTPException(status_code=400, detail="Audio too large (max 8MB)")
-    dest.write_bytes(content)
+    try:
+        asset = put_bytes_and_ready(
+            db, user, content, audio.content_type or "audio/webm"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     transcript = ""
     stt_configured = bool(settings.openai_api_key or settings.whisper_api_key)
     if stt_configured:
+        MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        dest = MEDIA_DIR / f"{asset.id}.tmp"
         try:
+            dest.write_bytes(content)
             transcript = await transcribe_audio(dest, settings, language_hint="hassaniya")
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail="STT failed") from exc
+        finally:
+            try:
+                dest.unlink(missing_ok=True)
+            except OSError:
+                pass
 
-    mime = audio_media_type(dest)
-    rel = _store_audio_blob(db, dest.name, content, mime)
-    try:
-        db.commit()
-    except Exception as exc:  # noqa: BLE001
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Could not store audio") from exc
+    db.commit()
     return {
         "ok": True,
-        "audio_path": rel,
-        "audioPath": rel,
+        "audioId": asset.id,
+        "audio_id": asset.id,
+        "audio_path": None,
+        "audioPath": None,
         "transcript": transcript,
         "field": field if field in ("question", "answer") else "question",
         "sttConfigured": stt_configured,
+        **asset_out(asset),
     }
 
 
@@ -860,27 +946,7 @@ def admin_pending(
         "daily": daily,
         "consensusNeeded": CONSENSUS_NEEDED,
         "items": [
-            {
-                "id": str(s.id),
-                "locale": s.target_locale,
-                "text": s.text,
-                "answer": s.answer_text,
-                "audioPath": _playable_audio_path(db, s.audio_path),
-                "note": s.contributor_note,
-                "status": s.status,
-                "approvals": _approvals_payload(db, s.id, s.text),
-                "user": {
-                    "id": s.user.id if s.user else None,
-                    "name": s.user.name if s.user else "unknown",
-                    "email": s.user.email if s.user else "",
-                },
-                "prompt": {
-                    "sourceText": s.prompt.source_text,
-                    "sourceLocale": s.prompt.source_locale,
-                    "intent": s.prompt.intent,
-                    "importId": s.prompt.import_id,
-                },
-            }
+            _submission_audio_item(db, s)
             for s in items
             if s.prompt
         ],
@@ -1083,13 +1149,14 @@ def admin_approved(
             ).lower()
             if needle not in blob:
                 continue
+        fields = _submission_audio_fields(db, s)
         out.append(
             {
                 "id": str(s.id),
                 "locale": s.target_locale,
                 "text": s.text,
                 "answer": s.answer_text,
-                "audioPath": _playable_audio_path(db, s.audio_path),
+                **fields,
                 "status": s.status,
                 "acceptance": _acceptance_for(db, s),
                 "user": {
@@ -1132,19 +1199,19 @@ def admin_edit_approved(
     if len(text) < 2:
         raise HTTPException(status_code=400, detail="Empty text")
 
-    prev = {"text": sub.text, "answer": sub.answer_text, "audioPath": sub.audio_path}
-    next_audio = sub.audio_path
+    prev = {"text": sub.text, "answer": sub.answer_text, "audioId": sub.audio_id}
+    next_audio_id = sub.audio_id
     if body.clear_audio:
-        next_audio = None
-    elif body.audio_path is not None:
-        resolved = _resolve_audio_ref(db, body.audio_path)
-        if body.audio_path.strip() and not resolved:
-            raise HTTPException(status_code=400, detail="Audio not found — re-record")
-        next_audio = resolved
+        next_audio_id = None
+    elif body.audio_id is not None:
+        resolved = resolve_ready_audio_id(db, body.audio_id)
+        if body.audio_id.strip() and not resolved:
+            raise HTTPException(status_code=400, detail="Audio not ready — re-record")
+        next_audio_id = resolved
 
     sub.text = text
     sub.answer_text = answer or None
-    sub.audio_path = next_audio
+    link_asset_to_submission(db, next_audio_id, sub)
     sub.reviewed_at = datetime.now(timezone.utc)
     sub.reviewed_by = owner.id
 
@@ -1166,18 +1233,19 @@ def admin_edit_approved(
         entity_id=sub.id,
         detail={
             "from": prev,
-            "to": {"text": text, "answer": answer, "audioPath": next_audio},
+            "to": {"text": text, "answer": answer, "audioId": next_audio_id},
         },
     )
     db.commit()
     db.refresh(sub)
+    fields = _submission_audio_fields(db, sub)
     return {
         "ok": True,
         "item": {
             "id": str(sub.id),
             "text": sub.text,
             "answer": sub.answer_text,
-            "audioPath": _playable_audio_path(db, sub.audio_path),
+            **fields,
             "acceptance": _acceptance_for(db, sub),
             "row": row,
         },
@@ -1193,44 +1261,21 @@ def admin_submission_audio(
     """Reviewer/owner: stream a submission voice clip for verification."""
     _ = actor
     sub = db.scalars(select(Submission).where(Submission.id == submission_id)).first()
-    if not sub or not sub.audio_path:
+    if not sub:
         raise HTTPException(status_code=404, detail="Audio not found")
-    loaded = _load_audio_bytes(db, sub.audio_path)
+    aid = playable_audio_id_for_submission(db, sub)
+    if not aid:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    loaded = load_ready_bytes(db, aid)
     if not loaded:
         raise HTTPException(status_code=404, detail="Audio file missing")
     data, mime = loaded
-    name = audio_basename(sub.audio_path) or "clip.webm"
     return Response(
         content=data,
         media_type=mime,
         headers={
             "Cache-Control": "private, no-store",
-            "Content-Disposition": f'inline; filename="{name}"',
-        },
-    )
-
-
-@router.get("/admin/audio-file/{name}")
-def admin_audio_file(
-    name: str,
-    actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
-    db: Annotated[Session, Depends(get_contrib_session)],
-) -> Response:
-    """Stream a stored clip by filename (preview before linking to a submission)."""
-    _ = actor
-    safe = audio_basename(name)
-    if not safe:
-        raise HTTPException(status_code=400, detail="Invalid audio name")
-    loaded = _load_audio_bytes(db, safe)
-    if not loaded:
-        raise HTTPException(status_code=404, detail="Audio not found")
-    data, mime = loaded
-    return Response(
-        content=data,
-        media_type=mime,
-        headers={
-            "Cache-Control": "private, no-store",
-            "Content-Disposition": f'inline; filename="{safe}"',
+            "Content-Disposition": f'inline; filename="{aid}.audio"',
         },
     )
 

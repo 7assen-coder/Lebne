@@ -40,3 +40,14 @@ services:
         sync: false
       - key: LEBNE_CONTRIB_DATABASE_URL
         sync: false
+      # Optional R2 — without these, API stores audio payloads in Neon
+      - key: LEBNE_R2_ACCOUNT_ID
+        sync: false
+      - key: LEBNE_R2_ACCESS_KEY_ID
+        sync: false
+      - key: LEBNE_R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: LEBNE_R2_BUCKET
+        sync: false
+      - key: LEBNE_R2_ENDPOINT
+        sync: false

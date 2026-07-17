@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     whisper_model: str = "whisper-1"
     public_base_url: str = "http://localhost:8000"
 
+    # Cloudflare R2 (S3-compatible). When unset, audio bytes fall back to Neon payloads.
+    r2_account_id: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    r2_endpoint: str | None = None  # default: https://{account_id}.r2.cloudflarestorage.com
+    r2_public_base: str | None = None  # optional CDN / public URL prefix
+    audio_max_bytes: int = 8_000_000
+
 
 @lru_cache
 def get_settings() -> Settings:

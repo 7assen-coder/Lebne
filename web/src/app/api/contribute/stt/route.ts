@@ -52,8 +52,14 @@ export async function POST(req: Request) {
     field?: string;
     sttConfigured?: boolean;
   };
+  const audioId =
+    (payload as { audioId?: string; audio_id?: string }).audioId ||
+    (payload as { audio_id?: string }).audio_id ||
+    null;
   return NextResponse.json({
     ok: Boolean(payload.ok),
+    audioId,
+    audio_id: audioId,
     audio_path: payload.audio_path || payload.audioPath || null,
     audioPath: payload.audioPath || payload.audio_path || null,
     transcript: typeof payload.transcript === "string" ? payload.transcript : "",

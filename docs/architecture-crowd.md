@@ -4,25 +4,31 @@
 flowchart TB
   subgraph clients [Clients]
     Web[Next.js_web_Vercel]
+    Phone[Phone_browser]
+    Laptop[Laptop_browser]
     Future[Future_mobile_admin]
   end
 
   subgraph edge [Edge_BFF]
     Web -->|server_proxy_cookies| BFF[Next_route_handlers]
+    Phone --> BFF
+    Laptop --> BFF
   end
 
   subgraph backend [Docker_backend]
     API[FastAPI_api_container]
-    PG[(Postgres)]
+    PG[(Neon_Postgres_metadata)]
     Redis[(Redis_optional)]
-    Media[Object_storage_later]
+    R2[(Cloudflare_R2_or_Neon_payload)]
   end
 
   BFF -->|HTTPS_JSON_JWT| API
+  Phone -->|"presigned_PUT"| R2
+  Laptop -->|"presigned_PUT"| R2
   Future --> API
   API --> PG
   API --> Redis
-  API --> Media
+  API --> R2
   API -->|approve| JSONL[lebne_mru_locale_jsonl_export]
 ```
 
@@ -109,9 +115,9 @@ npm run dev
 
 ### 2. Data model evolution
 
-- **Voice:** `audio_object_key`, `stt_draft_text`, durable object storage (not ephemeral disk).
+- **Voice (shipped):** `contrib_audio_assets` (`id`, `object_key`, `status`, `storage_backend`) + `submissions.audio_id`. Bytes in **Cloudflare R2** when configured, else Neon `contrib_audio_payloads`. Legacy `audio_path` / `contrib_audio_blobs` are migration-only. Clients use `audioId` via `/crowd/v1/audio/*` (presign / complete / multipart / stream). Shared `VoiceRecorder` supports phone + laptop mime fallbacks and file picker.
 - **Roles (shipped):** `CrowdUser.role` ∈ `owner` \| `reviewer` \| `contributor`; Owner grants/revokes reviewer; consensus + daily cap as above.
-- **Attribution:** contributor + reviewer ids on export; `dataset_tag` on prompts; no emails in training JSONL.
+- **Attribution:** contributor + reviewer ids on export; `dataset_tag` on prompts; no emails in training JSONL. Migrate legacy blobs: `python scripts/migrate_audio_blobs_to_assets.py`.
 
 ### 3. Deploy path
 
