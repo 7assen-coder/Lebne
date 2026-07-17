@@ -307,19 +307,46 @@ export function AdminClient({
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/admin/bootstrap");
-    const data = await res.json().catch(() => ({}));
-    setLoading(false);
-    if (!res.ok) {
-      flash(data.error || "Could not load admin");
+
+    // Prefer one-shot bootstrap; fall back if Render is on an older API build.
+    const bootRes = await fetch("/api/admin/bootstrap");
+    if (bootRes.ok) {
+      const data = await bootRes.json().catch(() => ({}));
+      setLoading(false);
+      const pending = data.pending || {};
+      const list: Item[] = pending.items || [];
+      setItems(list);
+      setDaily(pending.daily || { used: 0, limit: null, remaining: null });
+      if (pending.consensusNeeded) setConsensusNeeded(pending.consensusNeeded);
+      const map: Record<string, string> = {};
+      for (const it of list) map[it.id] = it.text;
+      setEdits((prev) => ({ ...prev, ...map }));
+      setIndex(0);
+      if (!booted) {
+        setTab(list.length > 0 || !isOwner ? "inbox" : "people");
+        setBooted(true);
+      }
+      if (data.users?.users) setUsers(data.users.users);
+      if (data.approved?.items) applyApprovedList(data.approved.items);
       return;
     }
 
-    const pending = data.pending || {};
-    const list: Item[] = pending.items || [];
+    const pendingReq = fetch("/api/admin/pending");
+    const usersReq = isOwner ? fetch("/api/admin/users") : Promise.resolve(null);
+    const approvedReq = isOwner ? loadApproved("") : Promise.resolve();
+    const [pRes, uRes] = await Promise.all([pendingReq, usersReq]);
+    await approvedReq;
+    const pData = await pRes.json().catch(() => ({}));
+    setLoading(false);
+
+    if (!pRes.ok) {
+      flash(pData.error || "Could not load admin");
+      return;
+    }
+    const list: Item[] = pData.items || [];
     setItems(list);
-    setDaily(pending.daily || { used: 0, limit: null, remaining: null });
-    if (pending.consensusNeeded) setConsensusNeeded(pending.consensusNeeded);
+    setDaily(pData.daily || { used: 0, limit: null, remaining: null });
+    if (pData.consensusNeeded) setConsensusNeeded(pData.consensusNeeded);
     const map: Record<string, string> = {};
     for (const it of list) map[it.id] = it.text;
     setEdits((prev) => ({ ...prev, ...map }));
@@ -328,10 +355,11 @@ export function AdminClient({
       setTab(list.length > 0 || !isOwner ? "inbox" : "people");
       setBooted(true);
     }
-
-    if (data.users?.users) setUsers(data.users.users);
-    if (data.approved?.items) applyApprovedList(data.approved.items);
-  }, [applyApprovedList, booted, flash, isOwner]);
+    if (uRes && uRes.ok) {
+      const uData = await uRes.json();
+      setUsers(uData.users || []);
+    }
+  }, [applyApprovedList, booted, flash, isOwner, loadApproved]);
 
   useEffect(() => {
     void load();
