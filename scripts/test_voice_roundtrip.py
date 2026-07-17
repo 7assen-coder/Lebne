@@ -31,9 +31,14 @@ get_settings.cache_clear()
 
 from sqlalchemy.orm import sessionmaker
 
-from contrib.audio_service import can_access_audio, load_ready_bytes, put_bytes_and_ready
+from contrib.audio_service import (
+    can_access_audio,
+    load_ready_bytes,
+    playable_audio_id_for_submission,
+    put_bytes_and_ready,
+)
 from contrib.db import get_contrib_engine, init_contrib_db, reset_contrib_engine
-from contrib.models import CrowdUser, ROLE_OWNER, ROLE_REVIEWER
+from contrib.models import ROLE_OWNER, ROLE_REVIEWER, CrowdUser, PromptItem, Submission
 from contrib.object_store import get_object_store, reset_object_store
 
 
@@ -116,6 +121,35 @@ def main() -> int:
             return 1
         except ValueError:
             print("empty_reject_ok")
+
+        # Linked submission is playable (admin Inbox/Approved path)
+        prompt = PromptItem(
+            import_id="test-voice-1",
+            source_text="bonjour",
+            source_locale="fr",
+            intent="greet",
+        )
+        db.add(prompt)
+        db.flush()
+        sub = Submission(
+            prompt_id=prompt.id,
+            user_id=uploader.id,
+            target_locale="hassaniya",
+            text="[voice]",
+            audio_id=asset.id,
+            status="pending",
+        )
+        db.add(sub)
+        db.commit()
+        playable = playable_audio_id_for_submission(db, sub)
+        assert playable == asset.id, "playable_audio_id_for_submission should return ready asset"
+        print("playable_submission_ok")
+
+        # STT-style durability: asset committed even if a later step "fails"
+        asset2 = put_bytes_and_ready(db, uploader, fake + b"\x01", "audio/mp4")
+        db.commit()
+        assert load_ready_bytes(db, asset2.id) is not None
+        print("stt_commit_survive_ok")
 
         print("VOICE_ROUNDTRIP_PASS")
         return 0

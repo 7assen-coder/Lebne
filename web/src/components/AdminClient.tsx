@@ -75,11 +75,43 @@ function initials(name: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function VoiceClip({ audioId, caption }: { audioId: string; caption?: string }) {
+function VoiceClip({
+  submissionId,
+  caption,
+}: {
+  submissionId: string;
+  caption?: string;
+}) {
   const [failed, setFailed] = useState(false);
+  const [hint, setHint] = useState("");
   useEffect(() => {
     setFailed(false);
-  }, [audioId]);
+    setHint("");
+  }, [submissionId]);
+
+  async function onPlayError() {
+    setFailed(true);
+    try {
+      const res = await fetch(`/api/admin/audio/${encodeURIComponent(submissionId)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (res.status === 404 || res.status === 502) {
+        setHint("This clip is missing — re-record and save a new take.");
+      } else if (res.ok) {
+        setHint(
+          "This browser may not play this format — open Admin on Chrome/desktop or re-record on this device.",
+        );
+      } else if (res.status === 401) {
+        setHint("Session expired — log in again.");
+      } else {
+        setHint("Could not play this clip — try again or re-record.");
+      }
+    } catch {
+      setHint("Could not play this clip — try again or re-record.");
+    }
+  }
+
   return (
     <div className="rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/8 px-4 py-3 sm:px-5 sm:py-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -92,16 +124,16 @@ function VoiceClip({ audioId, caption }: { audioId: string; caption?: string }) 
       </div>
       {failed ? (
         <p className="text-sm text-[#e85d4c] sm:text-base">
-          This clip is missing — re-record and save a new take.
+          {hint || "This clip is missing — re-record and save a new take."}
         </p>
       ) : (
         <audio
-          key={audioId}
+          key={submissionId}
           controls
           preload="metadata"
           className="w-full max-w-xl"
-          src={`/api/audio/${encodeURIComponent(audioId)}`}
-          onError={() => setFailed(true)}
+          src={`/api/admin/audio/${encodeURIComponent(submissionId)}`}
+          onError={() => void onPlayError()}
         />
       )}
     </div>
@@ -667,7 +699,7 @@ export function AdminClient({
                         />
                       ) : it.audioId ? (
                         <VoiceClip
-                          audioId={it.audioId}
+                          submissionId={it.id}
                           caption="Play while checking word / Hassaniya / answer"
                         />
                       ) : (
@@ -986,7 +1018,7 @@ export function AdminClient({
               {current.audioId ? (
                 <div className="mt-6">
                   <VoiceClip
-                    audioId={current.audioId}
+                    submissionId={current.id}
                     caption="Contributor recording — verify against the text below"
                   />
                 </div>

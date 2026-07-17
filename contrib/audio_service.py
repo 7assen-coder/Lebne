@@ -237,6 +237,9 @@ def playable_audio_id_for_submission(db: Session, sub: Submission) -> str | None
     store = get_object_store()
     if store.head(asset.object_key) is not None:
         return asset.id
+    # Legacy blob / head mismatch: still playable if bytes load.
+    if load_ready_bytes(db, asset.id) is not None:
+        return asset.id
     return None
 
 

@@ -6,10 +6,11 @@ export type VoiceUploadResult = {
 };
 
 const MIME_CANDIDATES = [
-  "audio/webm;codecs=opus",
-  "audio/webm",
+  // Prefer mp4/aac so Safari (phone) and Chrome can both play review clips.
   "audio/mp4",
   "audio/aac",
+  "audio/webm;codecs=opus",
+  "audio/webm",
   "audio/ogg",
 ];
 

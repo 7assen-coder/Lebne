@@ -770,6 +770,9 @@ async def stt(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Persist the asset before Whisper so a transcription failure never rolls back voice.
+    db.commit()
+
     transcript = ""
     stt_configured = bool(settings.openai_api_key or settings.whisper_api_key)
     if stt_configured:
@@ -778,15 +781,14 @@ async def stt(
         try:
             dest.write_bytes(content)
             transcript = await transcribe_audio(dest, settings, language_hint="hassaniya")
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail="STT failed") from exc
+        except Exception:  # noqa: BLE001 — voice is already saved; draft text is optional
+            transcript = ""
         finally:
             try:
                 dest.unlink(missing_ok=True)
             except OSError:
                 pass
 
-    db.commit()
     return {
         "ok": True,
         "audioId": asset.id,
