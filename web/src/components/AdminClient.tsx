@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UserRole } from "@/lib/auth";
 
 type UserRow = {
@@ -69,13 +69,32 @@ function initials(name: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function audioFileName(path: string | null | undefined) {
+  if (!path) return "";
+  const base = path.split("/").pop() || "";
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(base) ? base : "";
+}
+
 function VoiceClip({
   submissionId,
+  audioPath,
   caption,
 }: {
-  submissionId: string;
+  submissionId?: string;
+  audioPath?: string | null;
   caption?: string;
 }) {
+  const [failed, setFailed] = useState(false);
+  const fileName = audioFileName(audioPath);
+  const src = fileName
+    ? `/api/admin/audio-file/${encodeURIComponent(fileName)}`
+    : submissionId
+      ? `/api/admin/audio/${encodeURIComponent(submissionId)}`
+      : "";
+  useEffect(() => {
+    setFailed(false);
+  }, [src]);
+  if (!src) return null;
   return (
     <div className="rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/8 px-4 py-3 sm:px-5 sm:py-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -86,14 +105,104 @@ function VoiceClip({
           <span className="text-sm text-[var(--muted)] sm:text-base">{caption}</span>
         ) : null}
       </div>
-      <audio
-        controls
-        preload="none"
-        className="w-full max-w-xl"
-        src={`/api/admin/audio/${encodeURIComponent(submissionId)}`}
-      >
-        Your browser does not support audio.
-      </audio>
+      {failed ? (
+        <p className="text-sm text-[#e85d4c] sm:text-base">
+          Could not load this clip — re-record after the API redeploys, or save a new take.
+        </p>
+      ) : (
+        <audio
+          key={src}
+          controls
+          preload="metadata"
+          className="w-full max-w-xl"
+          src={src}
+          onError={() => setFailed(true)}
+        >
+          Your browser does not support audio.
+        </audio>
+      )}
+    </div>
+  );
+}
+
+function VoiceEditor({
+  audioPath,
+  onPath,
+  onClear,
+}: {
+  audioPath: string | null;
+  onPath: (path: string) => void;
+  onClear: () => void;
+}) {
+  const [recording, setRecording] = useState(false);
+  const [hint, setHint] = useState("");
+  const mediaRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  async function uploadVoice(blob: Blob) {
+    setHint("Saving…");
+    const fd = new FormData();
+    fd.append("audio", blob, "clip.webm");
+    fd.append("field", "question");
+    const res = await fetch("/api/contribute/stt", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setHint("Voice failed — try again");
+      return;
+    }
+    onPath(String(data.audio_path || data.audioPath || ""));
+    setHint("New voice saved — click Save fix");
+  }
+
+  async function toggleRecord() {
+    if (recording && mediaRef.current) {
+      mediaRef.current.stop();
+      setRecording(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size) chunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        void uploadVoice(new Blob(chunksRef.current, { type: "audio/webm" }));
+      };
+      mediaRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setHint("Listening… tap again to stop");
+    } catch {
+      setHint("Mic blocked");
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[var(--line)] bg-white/[0.03] px-4 py-4 sm:px-5">
+      <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--teal)]">
+        Voice (editable)
+      </p>
+      <p className="mt-2 text-sm text-[var(--muted)] sm:text-base">
+        {audioPath ? "Clip attached — re-record to replace, or clear." : "No clip — record one."}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={recording ? "btn-primary px-5 py-2.5 text-sm" : "btn-ghost px-5 py-2.5 text-sm"}
+          onClick={() => void toggleRecord()}
+        >
+          {recording ? "Stop" : audioPath ? "Re-record" : "Record"}
+        </button>
+        {audioPath ? (
+          <button type="button" className="btn-ghost px-5 py-2.5 text-sm" onClick={onClear}>
+            Clear voice
+          </button>
+        ) : null}
+      </div>
+      {hint ? <p className="mt-2 text-sm text-[var(--muted)]">{hint}</p> : null}
     </div>
   );
 }
@@ -151,6 +260,7 @@ export function AdminClient({
   const [approved, setApproved] = useState<ApprovedItem[]>([]);
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [answerEdits, setAnswerEdits] = useState<Record<string, string>>({});
+  const [audioEdits, setAudioEdits] = useState<Record<string, string | null>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -168,6 +278,21 @@ export function AdminClient({
     window.setTimeout(() => setToast(""), 2600);
   }, []);
 
+  const applyApprovedList = useCallback((list: ApprovedItem[]) => {
+    setApproved(list);
+    const tMap: Record<string, string> = {};
+    const aMap: Record<string, string> = {};
+    const vMap: Record<string, string | null> = {};
+    for (const it of list) {
+      tMap[it.id] = it.text;
+      aMap[it.id] = it.answer || "";
+      vMap[it.id] = it.audioPath || null;
+    }
+    setAnswerEdits(aMap);
+    setAudioEdits(vMap);
+    setEdits((prev) => ({ ...prev, ...tMap }));
+  }, []);
+
   const loadApproved = useCallback(
     async (q = "") => {
       if (!isOwner) return;
@@ -175,49 +300,38 @@ export function AdminClient({
       const res = await fetch(`/api/admin/approved${qs}`);
       if (!res.ok) return;
       const data = await res.json();
-      const list: ApprovedItem[] = data.items || [];
-      setApproved(list);
-      const tMap: Record<string, string> = {};
-      const aMap: Record<string, string> = {};
-      for (const it of list) {
-        tMap[it.id] = it.text;
-        aMap[it.id] = it.answer || "";
-      }
-      setAnswerEdits(aMap);
-      setEdits((prev) => ({ ...prev, ...tMap }));
+      applyApprovedList(data.items || []);
     },
-    [isOwner],
+    [applyApprovedList, isOwner],
   );
 
   const load = useCallback(async () => {
     setLoading(true);
-    const pendingReq = fetch("/api/admin/pending");
-    const usersReq = isOwner ? fetch("/api/admin/users") : Promise.resolve(null);
-    const approvedReq = isOwner ? loadApproved("") : Promise.resolve();
-    const [pRes, uRes] = await Promise.all([pendingReq, usersReq]);
-    await approvedReq;
-    const pData = await pRes.json();
+    const res = await fetch("/api/admin/bootstrap");
+    const data = await res.json().catch(() => ({}));
     setLoading(false);
+    if (!res.ok) {
+      flash(data.error || "Could not load admin");
+      return;
+    }
 
-    if (pRes.ok) {
-      const list: Item[] = pData.items || [];
-      setItems(list);
-      setDaily(pData.daily || { used: 0, limit: null, remaining: null });
-      if (pData.consensusNeeded) setConsensusNeeded(pData.consensusNeeded);
-      const map: Record<string, string> = {};
-      for (const it of list) map[it.id] = it.text;
-      setEdits((prev) => ({ ...prev, ...map }));
-      setIndex(0);
-      if (!booted) {
-        setTab(list.length > 0 || !isOwner ? "inbox" : "people");
-        setBooted(true);
-      }
+    const pending = data.pending || {};
+    const list: Item[] = pending.items || [];
+    setItems(list);
+    setDaily(pending.daily || { used: 0, limit: null, remaining: null });
+    if (pending.consensusNeeded) setConsensusNeeded(pending.consensusNeeded);
+    const map: Record<string, string> = {};
+    for (const it of list) map[it.id] = it.text;
+    setEdits((prev) => ({ ...prev, ...map }));
+    setIndex(0);
+    if (!booted) {
+      setTab(list.length > 0 || !isOwner ? "inbox" : "people");
+      setBooted(true);
     }
-    if (uRes && uRes.ok) {
-      const uData = await uRes.json();
-      setUsers(uData.users || []);
-    }
-  }, [booted, isOwner, loadApproved]);
+
+    if (data.users?.users) setUsers(data.users.users);
+    if (data.approved?.items) applyApprovedList(data.approved.items);
+  }, [applyApprovedList, booted, flash, isOwner]);
 
   useEffect(() => {
     void load();
@@ -278,12 +392,17 @@ export function AdminClient({
 
   async function saveApprovedEdit(id: string) {
     setBusy(true);
+    const original = approved.find((a) => a.id === id);
+    const nextAudio = audioEdits[id] ?? null;
+    const clearAudio = !nextAudio && Boolean(original?.audioPath);
     const res = await fetch(`/api/admin/approved/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         text: edits[id] || "",
         answer: answerEdits[id] || "",
+        audioPath: nextAudio,
+        clearAudio,
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -608,14 +727,26 @@ export function AdminClient({
                       </button>
                     </div>
 
-                    {it.audioPath ? (
-                      <div className="mb-5">
+                    <div className="mb-5 space-y-3">
+                      {editing ? (
+                        <VoiceEditor
+                          audioPath={audioEdits[it.id] ?? null}
+                          onPath={(path) =>
+                            setAudioEdits((m) => ({ ...m, [it.id]: path || null }))
+                          }
+                          onClear={() => setAudioEdits((m) => ({ ...m, [it.id]: null }))}
+                        />
+                      ) : null}
+                      {(editing ? audioEdits[it.id] : it.audioPath) ? (
                         <VoiceClip
                           submissionId={it.id}
-                          caption="Play while checking Hassaniya / answer"
+                          audioPath={editing ? audioEdits[it.id] : it.audioPath}
+                          caption="Play while checking word / Hassaniya / answer"
                         />
-                      </div>
-                    ) : null}
+                      ) : (
+                        <p className="text-sm text-[var(--muted)]">No playable voice on this item.</p>
+                      )}
+                    </div>
 
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div className="rounded-2xl bg-white/[0.04] px-4 py-4 sm:px-6 sm:py-5">
@@ -929,6 +1060,7 @@ export function AdminClient({
                 <div className="mt-6">
                   <VoiceClip
                     submissionId={current.id}
+                    audioPath={current.audioPath}
                     caption="Contributor recording — verify against the text below"
                   />
                 </div>

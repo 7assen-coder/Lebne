@@ -9,7 +9,7 @@ services:
     repo: https://github.com/7assen-coder/Lebne
     branch: main
     buildCommand: pip install --upgrade pip && pip install -e .
-    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --timeout-keep-alive 30 --limit-concurrency 200
     healthCheckPath: /health
     envVars:
       - key: LEBNE_ENV
@@ -22,6 +22,14 @@ services:
         value: hash
       - key: LEBNE_SESSION_BACKEND
         value: memory
+      - key: LEBNE_RATE_LIMIT_REQUESTS
+        value: "240"
+      - key: LEBNE_RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: LEBNE_CROWD_AUTH_RATE_LIMIT
+        value: "60"
+      - key: LEBNE_CROWD_STT_RATE_LIMIT
+        value: "60"
       - key: LEBNE_CORS_ORIGINS
         value: https://lebne.vercel.app
       - key: LEBNE_PUBLIC_BASE_URL

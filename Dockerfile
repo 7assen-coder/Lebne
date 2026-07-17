@@ -29,4 +29,5 @@ ENV LEBNE_EMBEDDING_BACKEND=hash
 # Render/Fly inject PORT; local default 8000
 ENV PORT=8000
 EXPOSE 8000
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Single worker keeps memory under Render free limits; concurrency via async + Neon pool.
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} --timeout-keep-alive 30 --limit-concurrency 200"]

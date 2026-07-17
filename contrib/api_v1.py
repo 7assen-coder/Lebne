@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -41,9 +41,10 @@ from contrib.export_util import (
 from contrib.media_util import (
     MAX_AUDIO_BYTES,
     MEDIA_DIR,
+    audio_basename,
     audio_media_type,
+    portable_audio_path,
     resolve_audio_file,
-    safe_audio_path,
 )
 from contrib.models import (
     CONSENSUS_NEEDED,
@@ -51,6 +52,7 @@ from contrib.models import (
     ROLE_OWNER,
     ROLE_REVIEWER,
     REVIEWER_DAILY_LIMIT,
+    AudioBlob,
     AuditLog,
     CrowdUser,
     PromptItem,
@@ -118,6 +120,48 @@ class RoleBody(BaseModel):
 class ApprovedEditBody(BaseModel):
     text: str = Field(min_length=2, max_length=2000)
     answer: str | None = Field(default=None, max_length=4000)
+    audio_path: str | None = Field(default=None, max_length=512)
+    clear_audio: bool = False
+
+
+def _store_audio_blob(db: Session, name: str, data: bytes, content_type: str) -> str:
+    existing = db.get(AudioBlob, name)
+    if existing:
+        existing.data = data
+        existing.content_type = content_type
+    else:
+        db.add(AudioBlob(name=name, data=data, content_type=content_type))
+    db.flush()
+    return portable_audio_path(name)
+
+
+def _resolve_audio_ref(db: Session, raw: str | None) -> str | None:
+    """Accept audio if the file or Neon blob exists; return portable path."""
+    name = audio_basename(raw)
+    if not name:
+        return None
+    if resolve_audio_file(name) is not None:
+        return portable_audio_path(name)
+    if db.get(AudioBlob, name) is not None:
+        return portable_audio_path(name)
+    return None
+
+
+def _load_audio_bytes(db: Session, raw: str | None) -> tuple[bytes, str] | None:
+    name = audio_basename(raw)
+    if not name:
+        return None
+    path = resolve_audio_file(name)
+    if path is not None:
+        return path.read_bytes(), audio_media_type(path)
+    blob = db.get(AudioBlob, name)
+    if blob is not None and blob.data:
+        return bytes(blob.data), blob.content_type or audio_media_type(name)
+    return None
+
+
+def _playable_audio_path(db: Session, raw: str | None) -> str | None:
+    return _resolve_audio_ref(db, raw)
 
 
 def _user_out(user: CrowdUser) -> dict:
@@ -505,7 +549,7 @@ def submit(
     utterance = (body.text or body.question or "").strip()
     answer = (body.answer or "").strip() or None
 
-    audio_path = safe_audio_path(body.audio_path)
+    audio_path = _resolve_audio_ref(db, body.audio_path)
 
     if len(utterance) < 2 and not audio_path:
         raise HTTPException(status_code=400, detail="Type Hassaniya or record voice")
@@ -622,6 +666,7 @@ async def stt(
     request: Request,
     user: Annotated[CrowdUser, Depends(get_crowd_user)],
     settings: Annotated[Settings, Depends(get_settings)],
+    db: Annotated[Session, Depends(get_contrib_session)],
     audio: UploadFile = File(...),
     field: str = Form(default="question"),
 ) -> dict:
@@ -650,7 +695,13 @@ async def stt(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail="STT failed") from exc
 
-    rel = safe_audio_path(str(dest)) or f"media/contrib_audio/{dest.name}"
+    mime = audio_media_type(dest)
+    rel = _store_audio_blob(db, dest.name, content, mime)
+    try:
+        db.commit()
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Could not store audio") from exc
     return {
         "ok": True,
         "audio_path": rel,
@@ -767,6 +818,20 @@ def admin_set_role(
     return {"ok": True, "user": _user_out(target)}
 
 
+@router.get("/admin/bootstrap")
+def admin_bootstrap(
+    actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> dict:
+    """One round-trip for admin dashboard cold load (pending + optional owner data)."""
+    pending = admin_pending(actor, db)
+    payload: dict = {"pending": pending, "users": None, "approved": None}
+    if effective_role(actor) == ROLE_OWNER:
+        payload["users"] = admin_users(actor, db)
+        payload["approved"] = admin_approved(actor, db, q=None, limit=80)
+    return payload
+
+
 @router.get("/admin/pending")
 def admin_pending(
     actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
@@ -800,7 +865,7 @@ def admin_pending(
                 "locale": s.target_locale,
                 "text": s.text,
                 "answer": s.answer_text,
-                "audioPath": s.audio_path,
+                "audioPath": _playable_audio_path(db, s.audio_path),
                 "note": s.contributor_note,
                 "status": s.status,
                 "approvals": _approvals_payload(db, s.id, s.text),
@@ -1024,7 +1089,7 @@ def admin_approved(
                 "locale": s.target_locale,
                 "text": s.text,
                 "answer": s.answer_text,
-                "audioPath": s.audio_path,
+                "audioPath": _playable_audio_path(db, s.audio_path),
                 "status": s.status,
                 "acceptance": _acceptance_for(db, s),
                 "user": {
@@ -1067,9 +1132,19 @@ def admin_edit_approved(
     if len(text) < 2:
         raise HTTPException(status_code=400, detail="Empty text")
 
-    prev = {"text": sub.text, "answer": sub.answer_text}
+    prev = {"text": sub.text, "answer": sub.answer_text, "audioPath": sub.audio_path}
+    next_audio = sub.audio_path
+    if body.clear_audio:
+        next_audio = None
+    elif body.audio_path is not None:
+        resolved = _resolve_audio_ref(db, body.audio_path)
+        if body.audio_path.strip() and not resolved:
+            raise HTTPException(status_code=400, detail="Audio not found — re-record")
+        next_audio = resolved
+
     sub.text = text
     sub.answer_text = answer or None
+    sub.audio_path = next_audio
     sub.reviewed_at = datetime.now(timezone.utc)
     sub.reviewed_by = owner.id
 
@@ -1089,7 +1164,10 @@ def admin_edit_approved(
         action="edit",
         entity_type="submission",
         entity_id=sub.id,
-        detail={"from": prev, "to": {"text": text, "answer": answer}},
+        detail={
+            "from": prev,
+            "to": {"text": text, "answer": answer, "audioPath": next_audio},
+        },
     )
     db.commit()
     db.refresh(sub)
@@ -1099,6 +1177,7 @@ def admin_edit_approved(
             "id": str(sub.id),
             "text": sub.text,
             "answer": sub.answer_text,
+            "audioPath": _playable_audio_path(db, sub.audio_path),
             "acceptance": _acceptance_for(db, sub),
             "row": row,
         },
@@ -1107,23 +1186,52 @@ def admin_edit_approved(
 
 @router.get("/admin/submissions/{submission_id}/audio")
 def admin_submission_audio(
-    submission_id: uuid.UUID,
+    submission_id: int,
     actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
     db: Annotated[Session, Depends(get_contrib_session)],
-) -> FileResponse:
+) -> Response:
     """Reviewer/owner: stream a submission voice clip for verification."""
     _ = actor
     sub = db.scalars(select(Submission).where(Submission.id == submission_id)).first()
     if not sub or not sub.audio_path:
         raise HTTPException(status_code=404, detail="Audio not found")
-    path = resolve_audio_file(sub.audio_path)
-    if not path:
+    loaded = _load_audio_bytes(db, sub.audio_path)
+    if not loaded:
         raise HTTPException(status_code=404, detail="Audio file missing")
-    return FileResponse(
-        path,
-        media_type=audio_media_type(path),
-        filename=path.name,
-        headers={"Cache-Control": "private, no-store"},
+    data, mime = loaded
+    name = audio_basename(sub.audio_path) or "clip.webm"
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{name}"',
+        },
+    )
+
+
+@router.get("/admin/audio-file/{name}")
+def admin_audio_file(
+    name: str,
+    actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> Response:
+    """Stream a stored clip by filename (preview before linking to a submission)."""
+    _ = actor
+    safe = audio_basename(name)
+    if not safe:
+        raise HTTPException(status_code=400, detail="Invalid audio name")
+    loaded = _load_audio_bytes(db, safe)
+    if not loaded:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    data, mime = loaded
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'inline; filename="{safe}"',
+        },
     )
 
 

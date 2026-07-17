@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 ROLES = ("owner", "reviewer", "contributor")
@@ -138,3 +138,14 @@ class AuditLog(ContribBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     actor: Mapped[CrowdUser | None] = relationship(back_populates="audit_events")
+
+
+class AudioBlob(ContribBase):
+    """Durable voice clips in Postgres (survives Render ephemeral disk wipes)."""
+
+    __tablename__ = "contrib_audio_blobs"
+
+    name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), default="audio/webm")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

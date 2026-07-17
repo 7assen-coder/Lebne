@@ -28,12 +28,24 @@ export async function POST(
     body?.answer == null || body?.answer === ""
       ? null
       : String(body.answer).slice(0, 4000);
+  const audioPath =
+    typeof body?.audioPath === "string"
+      ? body.audioPath.slice(0, 512)
+      : typeof body?.audio_path === "string"
+        ? body.audio_path.slice(0, 512)
+        : undefined;
+  const clearAudio = Boolean(body?.clearAudio || body?.clear_audio);
   const { res, data } = await backendFetch(
     `/crowd/v1/admin/approved/${encodeURIComponent(id)}`,
     {
       method: "POST",
       token,
-      body: JSON.stringify({ text, answer }),
+      body: JSON.stringify({
+        text,
+        answer,
+        audio_path: clearAudio ? null : audioPath,
+        clear_audio: clearAudio,
+      }),
     },
   );
   if (!res.ok) return proxyJson(res, null, "Edit failed");

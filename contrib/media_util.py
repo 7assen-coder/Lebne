@@ -1,7 +1,8 @@
-"""Safe media path helpers for crowd audio."""
+"""Safe media path helpers for crowd audio (disk + Neon blob)."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 MEDIA_DIR = Path("media/contrib_audio")
@@ -16,13 +17,36 @@ _AUDIO_MIME = {
     ".mp4": "audio/mp4",
 }
 
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 
-def _safe_candidate(raw: str | None) -> Path | None:
-    """Resolve a stored path to a file under MEDIA_DIR (no traversal)."""
+
+def audio_basename(raw: str | None) -> str | None:
+    """Return a safe basename only (no path traversal, no existence check)."""
     if not raw or not isinstance(raw, str):
         return None
-    name = Path(raw).name
-    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+    cleaned = raw.strip().replace("\\", "/")
+    if ".." in cleaned:
+        return None
+    name = Path(cleaned).name
+    if not name or name in {".", ".."} or "/" in name:
+        return None
+    if not _SAFE_NAME.match(name):
+        return None
+    return name
+
+
+def portable_audio_path(name: str) -> str:
+    return f"media/contrib_audio/{name}"
+
+
+def audio_media_type(name_or_path: str | Path) -> str:
+    return _AUDIO_MIME.get(Path(name_or_path).suffix.lower(), "application/octet-stream")
+
+
+def resolve_audio_file(raw: str | None) -> Path | None:
+    """Return the on-disk audio file for a stored path, or None."""
+    name = audio_basename(raw)
+    if not name:
         return None
     root = MEDIA_DIR.resolve()
     candidate = (MEDIA_DIR / name).resolve()
@@ -38,18 +62,8 @@ def _safe_candidate(raw: str | None) -> Path | None:
 
 
 def safe_audio_path(raw: str | None) -> str | None:
-    """Accept only a basename that already exists under MEDIA_DIR (no traversal)."""
-    candidate = _safe_candidate(raw)
+    """Accept a basename that exists on disk under MEDIA_DIR (legacy helper)."""
+    candidate = resolve_audio_file(raw)
     if not candidate:
         return None
-    # Store portable relative path
-    return f"media/contrib_audio/{candidate.name}"
-
-
-def resolve_audio_file(raw: str | None) -> Path | None:
-    """Return the on-disk audio file for a stored path, or None."""
-    return _safe_candidate(raw)
-
-
-def audio_media_type(path: Path) -> str:
-    return _AUDIO_MIME.get(path.suffix.lower(), "application/octet-stream")
+    return portable_audio_path(candidate.name)

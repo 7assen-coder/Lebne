@@ -20,7 +20,13 @@ def get_contrib_engine() -> Engine:
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     pool_kwargs: dict = {}
     if not url.startswith("sqlite"):
-        pool_kwargs = {"pool_size": 5, "max_overflow": 10, "pool_recycle": 1800}
+        # Sized for ~100 concurrent crowd users on a single API instance + Neon.
+        pool_kwargs = {
+            "pool_size": 12,
+            "max_overflow": 24,
+            "pool_recycle": 1800,
+            "pool_timeout": 30,
+        }
     engine = create_engine(
         url,
         future=True,
