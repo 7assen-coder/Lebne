@@ -27,7 +27,10 @@ def effective_role(user: CrowdUser) -> str:
 def mint_crowd_token(user: CrowdUser, settings: Settings) -> str:
     now = datetime.now(timezone.utc)
     role = effective_role(user)
-    ttl_days = max(1, min(int(settings.crowd_token_ttl_days or 7), 30))
+    ttl_hours = int(getattr(settings, "crowd_token_ttl_hours", 0) or 0)
+    if ttl_hours <= 0:
+        ttl_hours = max(1, min(int(settings.crowd_token_ttl_days or 1), 30)) * 24
+    ttl_hours = max(1, min(ttl_hours, 24 * 30))
     payload = {
         "sub": str(user.id),
         "email": user.email,
@@ -38,7 +41,7 @@ def mint_crowd_token(user: CrowdUser, settings: Settings) -> str:
         "iss": settings.jwt_issuer,
         "aud": CROWD_AUD,
         "iat": now,
-        "exp": now + timedelta(days=ttl_days),
+        "exp": now + timedelta(hours=ttl_hours),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 

@@ -6,14 +6,18 @@ import hashlib
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.config import get_settings
+from contrib.crowd_auth import effective_role
 from contrib.media_util import EXT_FOR_MIME, MAX_AUDIO_BYTES, mime_for_filename
 from contrib.models import (
     AUDIO_STATUS_FAILED,
     AUDIO_STATUS_READY,
     AUDIO_STATUS_UPLOADING,
+    ROLE_OWNER,
+    ROLE_REVIEWER,
     AudioAsset,
     AudioBlob,
     CrowdUser,
@@ -170,6 +174,30 @@ def load_ready_bytes(db: Session, audio_id: str) -> tuple[bytes, str] | None:
     if blob and blob.data:
         return bytes(blob.data), blob.content_type or asset.content_type
     return None
+
+
+def can_access_audio(db: Session, user: CrowdUser, audio_id: str) -> bool:
+    """Uploader, reviewer/owner, or user linked via submission may stream."""
+    asset = db.get(AudioAsset, audio_id)
+    if not asset or asset.status != AUDIO_STATUS_READY:
+        return False
+    if asset.uploaded_by == user.id:
+        return True
+    role = effective_role(user)
+    if role in (ROLE_OWNER, ROLE_REVIEWER):
+        return True
+    if asset.submission_id:
+        sub = db.get(Submission, asset.submission_id)
+        if sub and sub.user_id == user.id:
+            return True
+    # Also allow if any submission references this audio_id and belongs to user
+    linked = db.scalar(
+        select(Submission.id).where(
+            Submission.audio_id == audio_id,
+            Submission.user_id == user.id,
+        )
+    )
+    return linked is not None
 
 
 def resolve_ready_audio_id(

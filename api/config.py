@@ -87,8 +87,11 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     crowd_auth_rate_limit: int = 20
     crowd_stt_rate_limit: int = 30
-    # Crowd JWT lifetime (days). Cookie maxAge in Next.js should match.
-    crowd_token_ttl_days: int = 7
+    # Crowd JWT absolute lifetime (hours). Idle timeout is separate (web cookie).
+    crowd_token_ttl_days: int = 1  # legacy; prefer crowd_token_ttl_hours
+    crowd_token_ttl_hours: int = 12
+    # Not used by API JWT mint; documented for web idle cookie (seconds).
+    crowd_idle_seconds: int = 600
     openai_api_key: str | None = None
     whisper_api_key: str | None = None
     whisper_api_base: str = "https://api.openai.com/v1"

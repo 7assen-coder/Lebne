@@ -106,7 +106,7 @@ npm run dev
 |----------|--------|------|
 | Crowd domain | `contrib/*` + `/crowd/v1` | Users, prompts, submissions, review, export |
 | Wallet / agent | `wallet/*`, `agent/*` | Never share JWT `aud` with crowd |
-| UI | `web/` on Vercel | Cookie session only; no DB access |
+| UI | `web/` on Vercel | Cookie session + 10‑min idle (`lebne_crowd_active`); absolute JWT ~12h |
 | Training artifacts | JSONL export | Approved rows only |
 
 **Split when:** crowd write QPS degrades wallet/chat; deploy cadence diverges; STT/media needs different resources; compliance isolates crowd PII.
@@ -136,6 +136,10 @@ Promote schema staging → prod. Never point Vercel prod at staging API. Seed vi
 | Wallet | `lebne-api` | wallet/agent only |
 
 CORS allowlist = Vercel + localhost in dev. Prefer no browser→API in prod (BFF only). Secrets stay on API / Vercel server env — never `NEXT_PUBLIC_*` for JWT/DB.
+
+**Voice stream ACL:** `GET /crowd/v1/audio/{id}` only for uploader, reviewer/owner, or submission-linked user (404 otherwise). Mutating audio BFF routes use same-origin CSRF; multipart upload is rate-limited.
+
+**Idle session:** `LEBNE_CROWD_IDLE_SECONDS=600` sliding cookie + middleware; client `IdleGuard` on `/contribute` and `/admin`. Absolute crowd JWT `LEBNE_CROWD_TOKEN_TTL_HOURS=12`.
 
 ### 5. Observability
 

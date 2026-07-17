@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserRole } from "@/lib/auth";
+import { IdleGuard } from "./IdleGuard";
 import { VoiceRecorder } from "./VoiceRecorder";
 
 type UserRow = {
@@ -441,6 +442,7 @@ export function AdminClient({
 
   return (
     <div className="page-shell">
+      <IdleGuard />
       <nav className="mb-10 flex flex-wrap items-end justify-between gap-5 sm:mb-12 sm:gap-6">
         <div className="min-w-0">
           <a href="/" className="font-brand type-brand tracking-tight">

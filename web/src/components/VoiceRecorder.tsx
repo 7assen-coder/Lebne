@@ -1,7 +1,20 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { pickRecorderMime, uploadVoiceBlob } from "@/lib/voice-upload";
+
+export type VoiceRecorderHandle = {
+  recording: boolean;
+  busy: boolean;
+  stopAndFlush: () => Promise<string | null>;
+};
 
 type Props = {
   audioId: string | null;
@@ -9,15 +22,20 @@ type Props = {
   onTranscript?: (text: string) => void;
   withStt?: boolean;
   label?: string;
+  onStateChange?: (state: { recording: boolean; busy: boolean }) => void;
 };
 
-export function VoiceRecorder({
-  audioId,
-  onAudioId,
-  onTranscript,
-  withStt = true,
-  label = "Voice",
-}: Props) {
+export const VoiceRecorder = forwardRef<VoiceRecorderHandle, Props>(function VoiceRecorder(
+  {
+    audioId,
+    onAudioId,
+    onTranscript,
+    withStt = true,
+    label = "Voice",
+    onStateChange,
+  },
+  ref,
+) {
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState("");
@@ -26,23 +44,78 @@ export function VoiceRecorder({
   const chunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const mimeRef = useRef("audio/webm");
+  const audioIdRef = useRef(audioId);
+  const uploadPromiseRef = useRef<Promise<string | null> | null>(null);
+  const stopWaitersRef = useRef<Array<(id: string | null) => void>>([]);
 
-  async function handleBlob(blob: Blob) {
+  useEffect(() => {
+    audioIdRef.current = audioId;
+  }, [audioId]);
+
+  useEffect(() => {
+    onStateChange?.({ recording, busy });
+  }, [recording, busy, onStateChange]);
+
+  function settleStopWaiters(id: string | null) {
+    const waiters = stopWaitersRef.current;
+    stopWaitersRef.current = [];
+    for (const resolve of waiters) resolve(id);
+  }
+
+  async function handleBlob(blob: Blob): Promise<string | null> {
     setBusy(true);
     setHint("Uploading…");
     setFailed(false);
-    try {
-      const result = await uploadVoiceBlob(blob, { withStt });
-      onAudioId(result.audioId);
-      if (result.transcript && onTranscript) onTranscript(result.transcript);
-      setHint("Voice saved");
-    } catch {
-      setHint("Voice failed — try again or pick a file");
-      setFailed(true);
-    } finally {
-      setBusy(false);
-    }
+    const work = (async () => {
+      try {
+        const result = await uploadVoiceBlob(blob, { withStt });
+        onAudioId(result.audioId);
+        audioIdRef.current = result.audioId;
+        if (result.transcript && onTranscript) onTranscript(result.transcript);
+        setHint("Voice saved");
+        return result.audioId;
+      } catch {
+        setHint("Voice failed — try again or pick a file");
+        setFailed(true);
+        return null;
+      } finally {
+        setBusy(false);
+        uploadPromiseRef.current = null;
+      }
+    })();
+    uploadPromiseRef.current = work;
+    const id = await work;
+    settleStopWaiters(id);
+    return id;
   }
+
+  async function stopAndFlush(): Promise<string | null> {
+    if (uploadPromiseRef.current) {
+      return uploadPromiseRef.current;
+    }
+    if (recording && mediaRef.current) {
+      return new Promise((resolve) => {
+        stopWaitersRef.current.push(resolve);
+        mediaRef.current?.stop();
+        setRecording(false);
+      });
+    }
+    return audioIdRef.current;
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      get recording() {
+        return recording;
+      },
+      get busy() {
+        return busy;
+      },
+      stopAndFlush,
+    }),
+    [recording, busy],
+  );
 
   async function toggleRecord() {
     if (busy) return;
@@ -118,6 +191,7 @@ export function VoiceRecorder({
             disabled={busy}
             onClick={() => {
               onAudioId(null);
+              audioIdRef.current = null;
               setHint("");
               setFailed(false);
             }}
@@ -148,4 +222,4 @@ export function VoiceRecorder({
       ) : null}
     </div>
   );
-}
+});

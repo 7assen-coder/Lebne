@@ -23,6 +23,7 @@ from api.config import Settings, get_settings
 from api.security.rate_limit import rate_limiter
 from contrib.audio_service import (
     asset_out,
+    can_access_audio,
     complete_asset,
     create_uploading_asset,
     link_asset_to_submission,
@@ -601,8 +602,9 @@ def audio_stream(
     user: Annotated[CrowdUser, Depends(get_crowd_user)],
     db: Annotated[Session, Depends(get_contrib_session)],
 ) -> Response:
-    """Authenticated stream for any logged-in user who can access the asset."""
-    _ = user
+    """Stream only for uploader, reviewer/owner, or linked submission owner."""
+    if not can_access_audio(db, user, audio_id):
+        raise HTTPException(status_code=404, detail="Audio not found")
     loaded = load_ready_bytes(db, audio_id)
     if not loaded:
         raise HTTPException(status_code=404, detail="Audio not found")

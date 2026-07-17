@@ -1,9 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { IdleGuard } from "./IdleGuard";
 import { ProgressRing } from "./ProgressRing";
-import { VoiceRecorder } from "./VoiceRecorder";
+import { VoiceRecorder, type VoiceRecorderHandle } from "./VoiceRecorder";
 
 const VIEW_LOCALES = ["fr", "ar", "en"] as const;
 
@@ -33,13 +34,18 @@ export function ContributeClient({
   const [viewLoading, setViewLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [doneAll, setDoneAll] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [error, setError] = useState("");
+  const voiceRef = useRef<VoiceRecorderHandle | null>(null);
 
   const canSubmit = hassaniya.trim().length >= 2 || Boolean(audioId);
+  const voiceLocked = voiceBusy;
 
   const loadNext = useCallback(async (view: string) => {
     setLoading(true);
     setHassaniya("");
     setAudioId(null);
+    setError("");
     const res = await fetch(`/api/contribute/next?view=${view}`);
     const data = await res.json();
     setLoading(false);
@@ -69,25 +75,45 @@ export function ContributeClient({
   }
 
   async function submit() {
-    if (!prompt || !canSubmit) return;
+    if (!prompt || saving) return;
     setSaving(true);
+    setError("");
+
+    let nextAudioId = audioId;
+    const recorder = voiceRef.current;
+    if (recorder && (recorder.recording || recorder.busy)) {
+      nextAudioId = await recorder.stopAndFlush();
+      if (nextAudioId) setAudioId(nextAudioId);
+    }
+
+    const text = hassaniya.trim();
+    if (text.length < 2 && !nextAudioId) {
+      setError("Type Hassaniya or finish recording before Next");
+      setSaving(false);
+      return;
+    }
+
     const res = await fetch("/api/contribute/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         promptId: prompt.id,
-        text: hassaniya.trim() || undefined,
-        audioId: audioId || undefined,
+        text: text || undefined,
+        audioId: nextAudioId || undefined,
       }),
     });
     setSaving(false);
-    if (!res.ok) return;
+    if (!res.ok) {
+      setError("Could not save — try again");
+      return;
+    }
     await loadNext(viewLocale);
   }
 
   async function skip() {
-    if (!prompt || saving) return;
+    if (!prompt || saving || voiceLocked) return;
     setSaving(true);
+    setError("");
     const res = await fetch("/api/contribute/skip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -105,6 +131,7 @@ export function ContributeClient({
 
   return (
     <div className="page-shell">
+      <IdleGuard />
       <nav
         className="flex flex-wrap items-end justify-between"
         style={{ marginBottom: "var(--space-4)", gap: "var(--space-3)" }}
@@ -177,7 +204,7 @@ export function ContributeClient({
                 <button
                   key={loc}
                   type="button"
-                  disabled={viewLoading}
+                  disabled={viewLoading || voiceLocked}
                   onClick={() => void switchView(loc)}
                   className={`relative font-bold uppercase tracking-[0.12em] transition ${
                     on ? "text-[var(--accent)]" : "text-[var(--muted)] hover:text-[var(--ink)]"
@@ -231,7 +258,6 @@ export function ContributeClient({
             </p>
 
             <div className="action-grid">
-              {/* Type */}
               <div className="action-tile" data-kind="type" data-active={hassaniya.trim().length >= 2}>
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -264,17 +290,24 @@ export function ContributeClient({
                 />
               </div>
 
-              {/* Voice — phone / laptop / file */}
               <div className="action-tile" data-kind="voice" data-active={Boolean(audioId)}>
                 <VoiceRecorder
+                  ref={voiceRef}
                   audioId={audioId}
                   onAudioId={setAudioId}
                   onTranscript={(t) => setHassaniya((prev) => prev || t)}
+                  onStateChange={({ recording, busy }) => setVoiceBusy(recording || busy)}
                   withStt
                   label="Voice"
                 />
               </div>
             </div>
+
+            {error ? (
+              <p className="text-sm text-[#e85d4c]" style={{ marginTop: "var(--space-2)" }}>
+                {error}
+              </p>
+            ) : null}
 
             <div
               className="flex flex-wrap items-stretch"
@@ -284,7 +317,7 @@ export function ContributeClient({
                 type="button"
                 className="btn-ghost"
                 style={{ flex: "1 1 8rem" }}
-                disabled={saving}
+                disabled={saving || voiceLocked}
                 onClick={() => void skip()}
               >
                 Skip
@@ -293,10 +326,10 @@ export function ContributeClient({
                 type="button"
                 className="btn-primary"
                 style={{ flex: "2 1 12rem" }}
-                disabled={saving || !canSubmit}
+                disabled={saving || (!canSubmit && !voiceLocked)}
                 onClick={() => void submit()}
               >
-                {saving ? "…" : "Next"}
+                {saving ? "…" : voiceLocked ? "Saving voice…" : "Next"}
               </button>
             </div>
             <p
