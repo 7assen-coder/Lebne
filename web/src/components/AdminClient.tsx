@@ -69,6 +69,35 @@ function initials(name: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function VoiceClip({
+  submissionId,
+  caption,
+}: {
+  submissionId: string;
+  caption?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/8 px-4 py-3 sm:px-5 sm:py-4">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--teal)] sm:text-xs">
+          Voice
+        </span>
+        {caption ? (
+          <span className="text-sm text-[var(--muted)] sm:text-base">{caption}</span>
+        ) : null}
+      </div>
+      <audio
+        controls
+        preload="none"
+        className="w-full max-w-xl"
+        src={`/api/admin/audio/${encodeURIComponent(submissionId)}`}
+      >
+        Your browser does not support audio.
+      </audio>
+    </div>
+  );
+}
+
 function BigRing({ percent, size = 120 }: { percent: number; size?: number }) {
   const r = size * 0.38;
   const c = 2 * Math.PI * r;
@@ -566,6 +595,9 @@ export function AdminClient({
                         >
                           {it.prompt.sourceText}
                         </p>
+                        <p className="mt-2 text-sm text-[var(--muted)] sm:text-base">
+                          Word / question (source)
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -575,6 +607,15 @@ export function AdminClient({
                         {editing ? "Cancel" : "Edit"}
                       </button>
                     </div>
+
+                    {it.audioPath ? (
+                      <div className="mb-5">
+                        <VoiceClip
+                          submissionId={it.id}
+                          caption="Play while checking Hassaniya / answer"
+                        />
+                      </div>
+                    ) : null}
 
                     <div className="grid gap-4 lg:grid-cols-2">
                       <div className="rounded-2xl bg-white/[0.04] px-4 py-4 sm:px-6 sm:py-5">
@@ -878,9 +919,20 @@ export function AdminClient({
                   </>
                 )}
               </p>
+              <p className="mb-2 text-sm text-[var(--muted)] sm:text-base">
+                Word / question (source)
+              </p>
               <p className="font-display type-source font-medium" dir="auto">
                 {current.prompt.sourceText}
               </p>
+              {current.audioPath ? (
+                <div className="mt-6">
+                  <VoiceClip
+                    submissionId={current.id}
+                    caption="Contributor recording — verify against the text below"
+                  />
+                </div>
+              ) : null}
             </motion.div>
           </AnimatePresence>
 

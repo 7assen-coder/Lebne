@@ -38,7 +38,13 @@ from contrib.export_util import (
     row_from_submission,
     upsert_approved_row,
 )
-from contrib.media_util import MAX_AUDIO_BYTES, MEDIA_DIR, safe_audio_path
+from contrib.media_util import (
+    MAX_AUDIO_BYTES,
+    MEDIA_DIR,
+    audio_media_type,
+    resolve_audio_file,
+    safe_audio_path,
+)
 from contrib.models import (
     CONSENSUS_NEEDED,
     ROLE_CONTRIBUTOR,
@@ -1097,6 +1103,28 @@ def admin_edit_approved(
             "row": row,
         },
     }
+
+
+@router.get("/admin/submissions/{submission_id}/audio")
+def admin_submission_audio(
+    submission_id: uuid.UUID,
+    actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> FileResponse:
+    """Reviewer/owner: stream a submission voice clip for verification."""
+    _ = actor
+    sub = db.scalars(select(Submission).where(Submission.id == submission_id)).first()
+    if not sub or not sub.audio_path:
+        raise HTTPException(status_code=404, detail="Audio not found")
+    path = resolve_audio_file(sub.audio_path)
+    if not path:
+        raise HTTPException(status_code=404, detail="Audio file missing")
+    return FileResponse(
+        path,
+        media_type=audio_media_type(path),
+        filename=path.name,
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.get("/admin/exports")
