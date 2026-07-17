@@ -53,3 +53,4 @@ eval/results/
 *.db
 lebne_wallet.db
 test_lebne_wallet.db
+.vercel
