@@ -1,0 +1,18 @@
+# Override for public crowd tunnel / Render-like local prod.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.crowd.yml --env-file .env.crowd-tunnel up -d --build api
+services:
+  api:
+    environment:
+      LEBNE_ENV: ${LEBNE_ENV:-production}
+      LEBNE_CROWD_SURFACE_ONLY: ${LEBNE_CROWD_SURFACE_ONLY:-true}
+      LEBNE_CONTRIB_LEGACY_ENABLED: "false"
+      LEBNE_EMBEDDING_BACKEND: hash
+      LEBNE_SESSION_BACKEND: memory
+      LEBNE_CORS_ORIGINS: ${LEBNE_CORS_ORIGINS}
+      LEBNE_JWT_SECRET: ${LEBNE_JWT_SECRET}
+      LEBNE_DATABASE_URL: ${LEBNE_DATABASE_URL}
+      # Must match Neon (host .env often overrides with local sqlite)
+      LEBNE_CONTRIB_DATABASE_URL: ${LEBNE_DATABASE_URL}
+      LEBNE_PUBLIC_BASE_URL: ${LEBNE_PUBLIC_BASE_URL:-https://lebne.vercel.app}
+      # Crowd host does not need local LLM/Qdrant for login/contribute
+      LEBNE_QDRANT_URL: http://qdrant:6333
