@@ -35,7 +35,11 @@ def content_hash(row: dict) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate Lebne training dataset")
     parser.add_argument("dataset", type=Path)
-    parser.add_argument("--require-reviewed", action="store_true", default=True)
+    parser.add_argument(
+        "--require-reviewed",
+        action="store_true",
+        help="Fail if any row has reviewed=false (use before fine-tune)",
+    )
     args = parser.parse_args()
 
     rows = load_jsonl(args.dataset)

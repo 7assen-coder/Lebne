@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Lebne · Review queue{% endblock %}
+{% block body %}
+<header class="brand-block compact">
+  <p class="brand">Lebne</p>
+  <h1>Pending rewrites</h1>
+  <p class="lede">Approve only natural Mauritanian e-wallet speech. Approved lines append to <code>lebne_mru_&lt;locale&gt;.jsonl</code>.</p>
+</header>
+
+<form method="post" action="/admin/contrib/logout" class="inline-logout">
+  <button type="submit" class="btn ghost">Log out</button>
+</form>
+
+{% if not items %}
+<section class="panel empty"><p>Queue is clear. Nice work.</p></section>
+{% else %}
+{% for item in items %}
+<article class="review-card">
+  <div class="meta">
+    <span class="pill">{{ item.target_locale }}</span>
+    <span class="pill muted">{{ item.prompt.intent }}</span>
+    <span class="pill muted">#{{ item.id }}</span>
+  </div>
+  <p class="source-label">Source</p>
+  <blockquote class="source-text" dir="auto">{{ item.prompt.source_text }}</blockquote>
+  <form method="post" action="/admin/contrib/{{ item.id }}/approve" class="rewrite-form tight">
+    <label class="field grow">
+      <span>Submission (edit if needed)</span>
+      <textarea name="text" rows="4" required dir="auto">{{ item.text }}</textarea>
+    </label>
+    {% if item.contributor_note %}<p class="note">Note: {{ item.contributor_note }}</p>{% endif %}
+    <div class="actions">
+      <button type="submit" class="btn primary">Approve → locale file</button>
+    </div>
+  </form>
+  <form method="post" action="/admin/contrib/{{ item.id }}/reject" class="reject-form">
+    <button type="submit" class="btn danger">Reject</button>
+  </form>
+</article>
+{% endfor %}
+{% endif %}
+
+<p class="foot"><a href="/contrib/">Contribute</a></p>
+{% endblock %}

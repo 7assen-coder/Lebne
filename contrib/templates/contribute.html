@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Lebne · Help us speak Mauritania{% endblock %}
+{% block body %}
+<header class="brand-block">
+  <p class="brand">Lebne</p>
+  <h1>Rewrite this for how people speak in Mauritania</h1>
+  <p class="lede">Same situation as the source — new natural words for a Mauritanian e-wallet (MRU, local phrasing). Not a word-for-word translation.</p>
+</header>
+
+{% if thanks %}
+<p class="toast" role="status">Thanks — here’s another prompt.</p>
+{% endif %}
+
+{% if not prompt %}
+<section class="panel empty">
+  <p>No prompts loaded yet. Run <code>python scripts/seed_contrib_queue.py</code> first.</p>
+</section>
+{% else %}
+<section class="source-panel" aria-label="Source prompt from the 45k queue">
+  <div class="meta">
+    <span class="pill">{{ prompt.intent }}</span>
+    <span class="pill muted">source {{ prompt.source_locale }}</span>
+  </div>
+  <p class="source-label">Understand this situation</p>
+  <blockquote class="source-text" dir="auto">{{ prompt.source_text }}</blockquote>
+</section>
+
+<form class="rewrite-form" method="post" action="/contrib/submit" id="rewrite-form">
+  <input type="hidden" name="prompt_id" value="{{ prompt.id }}" />
+  <input type="hidden" name="audio_path" id="audio_path" value="" />
+
+  <label class="field">
+    <span>Your language</span>
+    <div class="locale-row" role="group" aria-label="Target locale">
+      {% for loc in locales %}
+      <label class="locale-chip {% if loc == locale %}is-active{% endif %}">
+        <input type="radio" name="target_locale" value="{{ loc }}" {% if loc == locale %}checked{% endif %}
+               onchange="window.location='/contrib/?locale='+this.value" />
+        {{ loc }}
+      </label>
+      {% endfor %}
+    </div>
+  </label>
+
+  <label class="field grow">
+    <span>Your Mauritanian version</span>
+    <textarea name="text" id="rewrite_text" required minlength="2" rows="5"
+      placeholder="e.g. How much do I have in my Lebne account? / كم عندي في حسابي؟" dir="auto"></textarea>
+  </label>
+
+  <div class="voice-row">
+    <button type="button" class="btn ghost" id="btn-record" {% if not stt_configured %}disabled title="Set LEBNE_OPENAI_API_KEY for voice"{% endif %}>
+      {{ "Hold mic — record" if stt_configured else "Voice needs API key" }}
+    </button>
+    <label class="btn ghost file-btn">
+      Upload audio
+      <input type="file" id="audio_file" accept="audio/*,.webm,.wav,.mp3,.m4a" hidden {% if not stt_configured %}disabled{% endif %} />
+    </label>
+    <span class="voice-hint" id="voice-status"></span>
+  </div>
+
+  <label class="field optional">
+    <span>Note for admin (optional)</span>
+    <input type="text" name="contributor_note" maxlength="200" placeholder="Dialect tip, region…" />
+  </label>
+
+  <button type="submit" class="btn primary">Submit for review</button>
+</form>
+{% endif %}
+
+<footer class="foot">
+  <p>{{ stats.prompts }} source prompts · {{ stats.pending }} pending · {{ stats.approved }} approved</p>
+  <a href="/admin/contrib">Admin</a>
+</footer>
+{% endblock %}
+{% block scripts %}
+<script src="/contrib/static/contrib.js"></script>
+{% endblock %}

@@ -50,14 +50,18 @@ Chat: `POST /v1/chat` with `Authorization: Bearer <token>`.
 ```text
 api/          FastAPI, settings, LLM client, session store
 agent/        LangGraph-oriented graph + specialized nodes
+web/          Next.js crowdsource app (React → Vercel): accounts, 45k progress, admin
+contrib/      Legacy Jinja contrib UI (optional; prefer web/)
 guardrail/    Domain gate (pre-LLM)
 rag/          Chunking + Qdrant retriever stubs
 training/     QLoRA + export stubs
-data/         FAQ corpus + sample JSONL
+data/         FAQ corpus + sample / crowdsourced JSONL
 eval/         Regression suite
-scripts/      validate_dataset, index_faq, run_eval
-docs/         Architecture, security, critical params
+scripts/      validate_dataset, index_faq, seed_contrib_queue, export_mru_locale_jsonl
+docs/         Architecture, security, contrib-deploy
 ```
+
+Crowdsourcing (preferred): `cd web && npm run dev` → http://localhost:3000 · see `web/README.md` (Vercel).
 
 ## Docs
 

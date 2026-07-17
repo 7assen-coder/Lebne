@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from agent.graph import run_agent
 from api.config import Settings, get_settings
@@ -24,26 +28,83 @@ from api.security.chat_safety import sanitize_user_text
 from api.security.rate_limit import enforce_rate_limit
 from api.security.step_up import issue_confirmation, peek_dev_2fa_code, verify_two_fa
 from api.session import session_store
+from contrib.api_v1 import router as crowd_api_router
+from contrib.db import init_contrib_db
+from contrib.routes import router as contrib_router
 from wallet.db import init_db
 from wallet.routes import router as wallet_router
 from wallet.service import wallet_service
 
-app = FastAPI(title="Lebne Agent + Wallet API", version="0.3.0")
+app = FastAPI(title="Lebne Agent + Wallet API", version="0.4.0")
+_settings = get_settings()
+_origins = [o.strip() for o in (_settings.cors_origins or "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "microphone=(self), camera=(), geolocation=()",
+    )
+    response.headers.setdefault("X-XSS-Protection", "0")
+    return response
+
+
 app.include_router(wallet_router)
+app.include_router(contrib_router)
+app.include_router(crowd_api_router)
+_contrib_static = Path(__file__).resolve().parents[1] / "contrib" / "static"
+app.mount("/contrib/static", StaticFiles(directory=str(_contrib_static)), name="contrib_static")
 log = get_logger("api")
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
     init_db()
+    init_contrib_db()
+    Path("media/contrib_audio").mkdir(parents=True, exist_ok=True)
     settings = get_settings()
-    if settings.env == "production" and settings.auth_mode == "oidc" and not settings.oidc_jwks_url:
-        raise RuntimeError("Production OIDC mode requires LEBNE_OIDC_JWKS_URL")
+    if settings.env == "production":
+        weak = ("CHANGE_ME", "dev_only", "lebne_jwt_secret")
+        secret = settings.jwt_secret or ""
+        if any(m in secret for m in weak) or len(secret) < 32:
+            raise RuntimeError("Production requires a strong LEBNE_JWT_SECRET (>=32 chars)")
+        if settings.auth_mode == "oidc" and not settings.oidc_jwks_url:
+            raise RuntimeError("Production OIDC mode requires LEBNE_OIDC_JWKS_URL")
+        if settings.contrib_legacy_enabled:
+            raise RuntimeError("Disable LEBNE_CONTRIB_LEGACY_ENABLED in production (use /crowd/v1)")
+    if settings.contrib_legacy_enabled and settings.contrib_admin_password in {
+        "",
+        "CHANGE_ME_CONTRIB_ADMIN",
+    }:
+        raise RuntimeError(
+            "LEBNE_CONTRIB_LEGACY_ENABLED requires a strong LEBNE_CONTRIB_ADMIN_PASSWORD"
+        )
+    try:
+        from contrib.export_util import scrub_all_locale_files
+
+        # Marker-gated: runs once, not on every container restart
+        scrub_all_locale_files()
+    except OSError:
+        pass
     log.info(
         "db_ready",
         msg="wallet tables ensured",
         auth_mode=settings.auth_mode,
         env=settings.env,
+        contrib_legacy=settings.contrib_legacy_enabled,
     )
 
 

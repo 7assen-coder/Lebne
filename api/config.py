@@ -75,6 +75,23 @@ class Settings(BaseSettings):
     # Database — Postgres in docker/prod; SQLite for local tests by default
     database_url: str = "sqlite:///./lebne_wallet.db"
 
+    # Crowdsourcing (Mauritanian rewrite of imported banking prompts)
+    contrib_database_url: str | None = None  # default: same as database_url
+    contrib_admin_password: str = "CHANGE_ME_CONTRIB_ADMIN"
+    # Legacy HTML /contrib + cookie admin — OFF by default (use Next.js + /crowd/v1)
+    contrib_legacy_enabled: bool = False
+    admin_bootstrap_email: str | None = None
+    cors_origins: str = "http://localhost:3000"
+    crowd_auth_rate_limit: int = 20
+    crowd_stt_rate_limit: int = 30
+    # Crowd JWT lifetime (days). Cookie maxAge in Next.js should match.
+    crowd_token_ttl_days: int = 7
+    openai_api_key: str | None = None
+    whisper_api_key: str | None = None
+    whisper_api_base: str = "https://api.openai.com/v1"
+    whisper_model: str = "whisper-1"
+    public_base_url: str = "http://localhost:8000"
+
 
 @lru_cache
 def get_settings() -> Settings:

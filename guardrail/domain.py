@@ -27,7 +27,19 @@ IN_DOMAIN_SEEDS = [
     "what languages does Lebne support Arabic French English",
     "quelles langues supportées arabe français anglais",
     "KYC documents NNI passport open account Mauritania",
+    "What do I need for KYC verification identity documents",
+    "Que faut-il pour la vérification KYC pièce d'identité NNI",
+    "ماذا أحتاج للتحقق من الهوية KYC الرقم الوطني جواز سفر",
+    "How do I freeze my account if my phone is stolen security",
+    "Comment geler mon compte téléphone volé support sécurité",
+    "كيف أجمد حسابي إذا سُرق هاتفي تجميد الأمان",
+    "failed transfer dispute transaction status support Lebne",
+    "transfert échoué litige statut transaction support",
+    "فشل التحويل نزاع حالة العملية دعم لبنة",
     "transaction history suspicious report OTP password security",
+    "currency MRU Mauritanian ouguiya Lebne wallet",
+    "devise MRU ouguiya mauritanienne portefeuille Lebne",
+    "عملة أوقية MRU محفظة لبنة",
 ]
 
 

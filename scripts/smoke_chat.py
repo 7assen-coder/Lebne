@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import urllib.error
@@ -31,6 +32,15 @@ def _post(path: str, body: dict, token: str | None = None) -> tuple[int, dict | 
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--message",
+        default="What languages does Lebne support?",
+        help="Chat message to send",
+    )
+    parser.add_argument("--locale", default="en")
+    args = parser.parse_args()
+
     try:
         with urllib.request.urlopen(f"{BASE}/health", timeout=10) as resp:
             print("health", resp.status, resp.read().decode()[:120])
@@ -38,7 +48,6 @@ def main() -> int:
         print("API not reachable:", exc)
         return 1
 
-    # Prefer local register (hybrid) so we don't shell-print IdP tokens.
     code, reg = _post(
         "/v1/auth/register",
         {"user_id": "smoke-user", "password": "SmokePass123!", "display_name": "Smoke"},
@@ -57,8 +66,8 @@ def main() -> int:
         "/v1/chat",
         {
             "session_id": "smoke-1",
-            "message": "What languages does Lebne support?",
-            "locale": "en",
+            "message": args.message,
+            "locale": args.locale,
         },
         token=token,
     )

@@ -15,7 +15,22 @@ class IntentRouter:
 
     KEYWORDS = {
         Intent.EXPENSE_EXTRACTION: ("dépensé", "depense", "spent", "أشتريت", "صرفت", "mr u", "mru", "ouguiya"),
-        Intent.ACCOUNT_ACTION: ("solde", "balance", "password", "mot de passe", "numéro", "phone", "historique"),
+        Intent.ACCOUNT_ACTION: (
+            "solde",
+            "balance",
+            "password",
+            "mot de passe",
+            "numéro",
+            "phone",
+            "historique",
+            "freeze",
+            "geler",
+            "تجميد",
+            "change pin",
+            "changer mon",
+            "غيّر",
+            "أغيّر",
+        ),
         Intent.FAQ: (
             "comment",
             "how",
@@ -26,8 +41,19 @@ class IntentRouter:
             "support",
             "language",
             "langues",
+            "kyc",
+            "nni",
+            "passport",
+            "مصادقة",
+            "هوية",
+            "رسوم",
             "ما هو",
             "كيف",
+            "ماذا",
+            "currency",
+            "devise",
+            "عملة",
+            "mru",
         ),
     }
 

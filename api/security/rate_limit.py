@@ -28,12 +28,19 @@ class RateLimiter:
                 self._redis = False
         return self._redis if self._redis is not False else None
 
-    def check(self, key: str, settings: Settings | None = None) -> None:
+    def check(
+        self,
+        key: str,
+        settings: Settings | None = None,
+        *,
+        limit: int | None = None,
+        window: int | None = None,
+    ) -> None:
         settings = settings or get_settings()
         if not settings.rate_limit_enabled:
             return
-        limit = settings.rate_limit_requests
-        window = settings.rate_limit_window_seconds
+        limit = settings.rate_limit_requests if limit is None else limit
+        window = settings.rate_limit_window_seconds if window is None else window
         r = self._redis_client(settings)
         if r is not None:
             rk = f"lebne:rl:{key}"

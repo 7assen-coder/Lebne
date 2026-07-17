@@ -12,11 +12,14 @@ venv/
 .env.*
 !.env.example
 
-# IDE / OS
+# IDE / OS / local agent
 .DS_Store
 .idea/
 .vscode/
+.cursor/
 *.swp
+.qdrant-initialized
+data/datasets/.scrubbed_training_v1
 
 # Models & data artifacts (keep schemas / small samples)
 models/
@@ -28,9 +31,17 @@ data/processed/
 !data/**/.gitkeep
 !data/faq/.gitkeep
 !data/datasets/.gitkeep
+# Large public imports (regenerate via scripts/import_banking_datasets.py)
+data/datasets/imported_banking.jsonl
+# Crowd training exports (owner-only; never commit)
+data/datasets/lebne_mru_*.jsonl
 
-# Qdrant local storage
+# Crowdsource audio drafts
+media/
+
+# Qdrant local storage / local tooling
 qdrant_storage/
+.tools/
 
 # Eval / training outputs
 training/outputs/

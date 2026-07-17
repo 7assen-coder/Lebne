@@ -5,26 +5,53 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${LEBNE_API_PORT:-8000}:8000"
-    env_file:
-      - .env.example
     environment:
+      LEBNE_ENV: development
       LEBNE_QDRANT_URL: http://qdrant:6333
-      LEBNE_LLM_BASE_URL: http://vllm:8000/v1
-      LEBNE_LLM_PROVIDER: vllm
       LEBNE_REDIS_URL: redis://redis:6379/0
-      LEBNE_SESSION_BACKEND: redis
+      LEBNE_SESSION_BACKEND: memory
       LEBNE_BACKEND_API_BASE_URL: http://api:8000
       LEBNE_WALLET_INTERNAL_MODE: "true"
       LEBNE_DATABASE_URL: postgresql+psycopg://lebne:lebne@postgres:5432/lebne
+      LEBNE_CONTRIB_DATABASE_URL: postgresql+psycopg://lebne:lebne@postgres:5432/lebne
+      LEBNE_CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      LEBNE_JWT_SECRET: ${LEBNE_JWT_SECRET:-CHANGE_ME_DEV_ONLY_lebne_jwt_secret_32b}
+      LEBNE_ADMIN_BOOTSTRAP_EMAIL: ${LEBNE_ADMIN_BOOTSTRAP_EMAIL:-}
+      LEBNE_CONTRIB_LEGACY_ENABLED: ${LEBNE_CONTRIB_LEGACY_ENABLED:-false}
+      LEBNE_PUBLIC_BASE_URL: http://localhost:8000
+      # Optional local LLM via host Ollama:
+      LEBNE_LLM_PROVIDER: ${LEBNE_LLM_PROVIDER:-ollama}
+      LEBNE_LLM_BASE_URL: ${LEBNE_LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LEBNE_LLM_MODEL: ${LEBNE_LLM_MODEL:-qwen2.5:3b}
+      LEBNE_EMBEDDING_BACKEND: ${LEBNE_EMBEDDING_BACKEND:-hash}
     depends_on:
-      - qdrant
-      - redis
-      - postgres
-      # Uncomment when a production model image/weights are ready:
-      # - vllm
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
     volumes:
-      - ./:/app
+      - ./data:/app/data
+      - crowd_media:/app/media
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+  # One-shot: docker compose run --rm seed
+  seed:
+    profiles: ["seed"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      LEBNE_DATABASE_URL: postgresql+psycopg://lebne:lebne@postgres:5432/lebne
+      LEBNE_CONTRIB_DATABASE_URL: postgresql+psycopg://lebne:lebne@postgres:5432/lebne
+      LEBNE_EMBEDDING_BACKEND: hash
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    command: ["python", "scripts/seed_contrib_queue.py"]
 
   postgres:
     image: postgres:16-alpine
@@ -36,6 +63,11 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lebne -d lebne"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -52,8 +84,8 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
 
-  # Local Identity Provider for step-1 OIDC (replace with bank IdP in real prod).
   keycloak:
+    profiles: ["idp"]
     image: quay.io/keycloak/keycloak:26.0
     command: ["start-dev", "--import-realm"]
     environment:
@@ -65,9 +97,6 @@ services:
     volumes:
       - ./deploy/keycloak:/opt/keycloak/data/import
 
-  # Production LLM serving (long-term default).
-  # Requires GPU host + model path mounted or pulled.
-  # Enable with: docker compose --profile llm up
   vllm:
     profiles: ["llm"]
     image: vllm/vllm-openai:latest
@@ -96,3 +125,4 @@ volumes:
   qdrant_storage:
   redis_data:
   postgres_data:
+  crowd_media:
