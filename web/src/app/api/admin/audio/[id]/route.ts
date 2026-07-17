@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
+import { audioProxyHeaders } from "@/lib/audio-response";
 import { apiBase } from "@/lib/backend";
 import { clientError } from "@/lib/http";
 import { getToken } from "@/lib/session";
@@ -9,14 +10,11 @@ async function proxyAudio(url: string, token: string) {
     cache: "no-store",
   });
   if (!res.ok) return null;
-  const contentType = res.headers.get("Content-Type") || "audio/webm";
+  const contentType = res.headers.get("Content-Type") || "audio/wav";
   const buf = await res.arrayBuffer();
   return new Response(buf, {
     status: 200,
-    headers: {
-      "Content-Type": contentType,
-      "Cache-Control": "private, no-store",
-    },
+    headers: audioProxyHeaders(contentType, buf.byteLength),
   });
 }
 
@@ -41,7 +39,6 @@ export async function GET(
   );
   if (byId) return byId;
 
-  // Optional ?name= fallback when submission path exists but id stream 404s
   const name = new URL(req.url).searchParams.get("name");
   if (name && /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(name)) {
     const byName = await proxyAudio(

@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UserRole } from "@/lib/auth";
+import { isLikelyUnplayableInSafari, loadAudioObjectUrl } from "@/lib/audio-playback";
 import { IdleGuard } from "./IdleGuard";
 import { VoiceRecorder } from "./VoiceRecorder";
 
@@ -82,35 +83,63 @@ function VoiceClip({
   submissionId: string;
   caption?: string;
 }) {
+  const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [hint, setHint] = useState("");
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
     setFailed(false);
     setHint("");
-  }, [submissionId]);
+    setLoading(true);
+    setSrc(null);
 
-  async function onPlayError() {
-    setFailed(true);
-    try {
-      const res = await fetch(`/api/admin/audio/${encodeURIComponent(submissionId)}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-      if (res.status === 404 || res.status === 502) {
-        setHint("This clip is missing — re-record and save a new take.");
-      } else if (res.ok) {
-        setHint(
-          "This browser may not play this format — open Admin on Chrome/desktop or re-record on this device.",
+    void (async () => {
+      try {
+        const loaded = await loadAudioObjectUrl(
+          `/api/admin/audio/${encodeURIComponent(submissionId)}`,
         );
-      } else if (res.status === 401) {
-        setHint("Session expired — log in again.");
-      } else {
-        setHint("Could not play this clip — try again or re-record.");
+        if (cancelled) {
+          URL.revokeObjectURL(loaded.url);
+          return;
+        }
+        objectUrl = loaded.url;
+        if (isLikelyUnplayableInSafari(loaded.contentType)) {
+          const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+          const safari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg/i.test(ua);
+          if (safari) {
+            setFailed(true);
+            setHint(
+              "Safari cannot play this older WebM clip. Open Admin in Chrome, or re-record (new takes save as WAV).",
+            );
+            URL.revokeObjectURL(loaded.url);
+            objectUrl = null;
+            return;
+          }
+        }
+        setSrc(loaded.url);
+      } catch (e) {
+        if (cancelled) return;
+        setFailed(true);
+        const status = (e as { status?: number }).status;
+        if (status === 401) setHint("Session expired — log in again.");
+        else if (status === 404 || status === 502) {
+          setHint("This clip is missing — re-record and save a new take.");
+        } else {
+          setHint("Could not play this clip — try again or re-record.");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch {
-      setHint("Could not play this clip — try again or re-record.");
-    }
-  }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [submissionId]);
 
   return (
     <div className="rounded-2xl border border-[var(--teal)]/25 bg-[var(--teal)]/8 px-4 py-3 sm:px-5 sm:py-4">
@@ -122,20 +151,15 @@ function VoiceClip({
           <span className="text-sm text-[var(--muted)] sm:text-base">{caption}</span>
         ) : null}
       </div>
-      {failed ? (
+      {loading ? (
+        <p className="text-sm text-[var(--muted)]">Loading voice…</p>
+      ) : failed ? (
         <p className="text-sm text-[#e85d4c] sm:text-base">
           {hint || "This clip is missing — re-record and save a new take."}
         </p>
-      ) : (
-        <audio
-          key={submissionId}
-          controls
-          preload="metadata"
-          className="w-full max-w-xl"
-          src={`/api/admin/audio/${encodeURIComponent(submissionId)}`}
-          onError={() => void onPlayError()}
-        />
-      )}
+      ) : src ? (
+        <audio controls preload="auto" className="w-full max-w-xl" src={src} />
+      ) : null}
     </div>
   );
 }

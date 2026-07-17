@@ -6,7 +6,7 @@ export type VoiceUploadResult = {
 };
 
 const MIME_CANDIDATES = [
-  // Prefer mp4/aac so Safari (phone) and Chrome can both play review clips.
+  // Prefer mp4/aac; Chrome often only supports webm — we convert to WAV before upload.
   "audio/mp4",
   "audio/aac",
   "audio/webm;codecs=opus",
@@ -29,6 +29,78 @@ export function extForMime(mime: string): string {
   if (base.includes("ogg")) return "ogg";
   if (base.includes("wav")) return "wav";
   return "webm";
+}
+
+/** Safari cannot play WebM from Chrome. Normalize uploads to WAV for all browsers. */
+export async function toUniversalWav(blob: Blob): Promise<Blob> {
+  if ((blob.type || "").includes("wav")) return blob;
+  const AC =
+    typeof window !== "undefined"
+      ? window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+      : undefined;
+  if (!AC) return blob;
+
+  const ctx = new AC();
+  try {
+    const raw = await blob.arrayBuffer();
+    const decoded = await ctx.decodeAudioData(raw.slice(0));
+    const targetRate = 22050;
+    const frames = Math.max(1, Math.ceil(decoded.duration * targetRate));
+    const offline = new OfflineAudioContext(1, frames, targetRate);
+    const src = offline.createBufferSource();
+    src.buffer = decoded;
+    src.connect(offline.destination);
+    src.start(0);
+    const rendered = await offline.startRendering();
+    return audioBufferToWav(rendered);
+  } catch {
+    return blob;
+  } finally {
+    try {
+      await ctx.close();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const sampleRate = buffer.sampleRate;
+  const samples = buffer.length;
+  const channels = buffer.numberOfChannels;
+  const mono = new Float32Array(samples);
+  for (let ch = 0; ch < channels; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < samples; i++) mono[i] += data[i] / channels;
+  }
+
+  const dataSize = samples * 2;
+  const ab = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(ab);
+  const writeStr = (offset: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataSize, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(36, "data");
+  view.setUint32(40, dataSize, true);
+  let offset = 44;
+  for (let i = 0; i < samples; i++) {
+    const s = Math.max(-1, Math.min(1, mono[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([ab], { type: "audio/wav" });
 }
 
 async function multipartUpload(blob: Blob, mime: string): Promise<VoiceUploadResult> {
@@ -59,20 +131,22 @@ async function sttUpload(blob: Blob, mime: string): Promise<VoiceUploadResult> {
 
 /**
  * Durable upload:
- * 1) STT path (asset + optional transcript) for typical clips
- * 2) R2 presigned PUT when configured (bypasses Vercel body limit)
- * 3) Multipart /api/audio (Neon fallback / small clips)
+ * 1) Convert to WAV when possible (Safari + Chrome can both play)
+ * 2) STT path (asset + optional transcript)
+ * 3) R2 presigned PUT when configured
+ * 4) Multipart /api/audio (Neon fallback)
  */
 export async function uploadVoiceBlob(
   blob: Blob,
   opts?: { withStt?: boolean },
 ): Promise<VoiceUploadResult> {
-  const mime = (blob.type || "audio/webm").split(";")[0];
-  const underSttCap = blob.size < 3.5 * 1024 * 1024;
+  const playable = await toUniversalWav(blob);
+  const mime = (playable.type || "audio/wav").split(";")[0];
+  const underSttCap = playable.size < 3.5 * 1024 * 1024;
 
   if (opts?.withStt !== false && underSttCap) {
     try {
-      return await sttUpload(blob, mime);
+      return await sttUpload(playable, mime);
     } catch {
       /* try other paths */
     }
@@ -81,7 +155,7 @@ export async function uploadVoiceBlob(
   const presignRes = await fetch("/api/audio/presign", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contentType: mime, byteSize: blob.size }),
+    body: JSON.stringify({ contentType: mime, byteSize: playable.size }),
   });
   if (presignRes.ok) {
     const presign = await presignRes.json().catch(() => ({}));
@@ -90,7 +164,7 @@ export async function uploadVoiceBlob(
       const putRes = await fetch(upload.url as string, {
         method: "PUT",
         headers: upload.headers || { "Content-Type": mime },
-        body: blob,
+        body: playable,
       });
       if (!putRes.ok) throw new Error("Direct upload failed");
       const done = await fetch("/api/audio/complete", {
@@ -106,5 +180,5 @@ export async function uploadVoiceBlob(
     }
   }
 
-  return multipartUpload(blob, mime);
+  return multipartUpload(playable, mime);
 }

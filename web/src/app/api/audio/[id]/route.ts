@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { audioProxyHeaders } from "@/lib/audio-response";
 import { apiBase } from "@/lib/backend";
 import { clientError } from "@/lib/http";
 import { getToken } from "@/lib/session";
@@ -28,13 +29,10 @@ export async function GET(
       res.status === 404 ? "Audio not found" : "Audio failed",
     );
   }
-  const contentType = res.headers.get("Content-Type") || "audio/webm";
+  const contentType = res.headers.get("Content-Type") || "audio/wav";
   const buf = await res.arrayBuffer();
   return new Response(buf, {
     status: 200,
-    headers: {
-      "Content-Type": contentType,
-      "Cache-Control": "private, no-store",
-    },
+    headers: audioProxyHeaders(contentType, buf.byteLength),
   });
 }

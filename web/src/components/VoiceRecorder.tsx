@@ -8,6 +8,7 @@ import {
   useState,
   type ChangeEvent,
 } from "react";
+import { loadAudioObjectUrl } from "@/lib/audio-playback";
 import { pickRecorderMime, uploadVoiceBlob } from "@/lib/voice-upload";
 
 export type VoiceRecorderHandle = {
@@ -40,6 +41,7 @@ export const VoiceRecorder = forwardRef<VoiceRecorderHandle, Props>(function Voi
   const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState("");
   const [failed, setFailed] = useState(false);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
   const mediaRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -55,6 +57,30 @@ export const VoiceRecorder = forwardRef<VoiceRecorderHandle, Props>(function Voi
   useEffect(() => {
     onStateChange?.({ recording, busy });
   }, [recording, busy, onStateChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPreviewSrc(null);
+    if (!audioId) return;
+    void (async () => {
+      try {
+        const loaded = await loadAudioObjectUrl(`/api/audio/${encodeURIComponent(audioId)}`);
+        if (cancelled) {
+          URL.revokeObjectURL(loaded.url);
+          return;
+        }
+        objectUrl = loaded.url;
+        setPreviewSrc(loaded.url);
+      } catch {
+        if (!cancelled) setPreviewSrc(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [audioId]);
 
   function settleStopWaiters(id: string | null) {
     const waiters = stopWaitersRef.current;
@@ -211,14 +237,8 @@ export const VoiceRecorder = forwardRef<VoiceRecorderHandle, Props>(function Voi
       {hint ? (
         <p className={`mt-2 text-sm ${failed ? "text-[#e85d4c]" : "text-[var(--muted)]"}`}>{hint}</p>
       ) : null}
-      {audioId ? (
-        <audio
-          key={audioId}
-          controls
-          preload="metadata"
-          className="mt-3 w-full max-w-xl"
-          src={`/api/audio/${encodeURIComponent(audioId)}`}
-        />
+      {audioId && previewSrc ? (
+        <audio key={audioId} controls preload="auto" className="mt-3 w-full max-w-xl" src={previewSrc} />
       ) : null}
     </div>
   );
