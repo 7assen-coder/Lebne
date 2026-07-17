@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent.graph import run_agent
@@ -35,16 +36,26 @@ from wallet.db import init_db
 from wallet.routes import router as wallet_router
 from wallet.service import wallet_service
 
-app = FastAPI(title="Lebne Agent + Wallet API", version="0.4.0")
 _settings = get_settings()
+_crowd_only = bool(_settings.crowd_surface_only)
+_is_prod = _settings.env == "production"
+
+app = FastAPI(
+    title="Lebne Crowd API" if _crowd_only else "Lebne Agent + Wallet API",
+    version="0.4.0",
+    # Hide interactive docs on public production surfaces
+    docs_url=None if (_is_prod or _crowd_only) else "/docs",
+    redoc_url=None if (_is_prod or _crowd_only) else "/redoc",
+    openapi_url=None if (_is_prod or _crowd_only) else "/openapi.json",
+)
 _origins = [o.strip() for o in (_settings.cors_origins or "").split(",") if o.strip()]
 if _origins:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept"],
     )
 
 
@@ -59,23 +70,47 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
         "microphone=(self), camera=(), geolocation=()",
     )
     response.headers.setdefault("X-XSS-Protection", "0")
+    if _is_prod or _crowd_only:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=63072000; includeSubDomains; preload",
+        )
     return response
 
 
-app.include_router(wallet_router)
-app.include_router(contrib_router)
+@app.middleware("http")
+async def crowd_surface_guard(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Block wallet/chat/legacy paths when the public API is crowd-only (Render)."""
+    if _crowd_only:
+        path = request.url.path or "/"
+        allowed = (
+            path == "/"
+            or path == "/health"
+            or path.startswith("/crowd/v1")
+        )
+        if not allowed:
+            return JSONResponse({"detail": "Not found"}, status_code=404)
+    return await call_next(request)
+
+
+# Crowd API is always mounted. Wallet/legacy only when not in crowd-surface mode.
+if not _crowd_only:
+    app.include_router(wallet_router)
+    app.include_router(contrib_router)
+    _contrib_static = Path(__file__).resolve().parents[1] / "contrib" / "static"
+    app.mount("/contrib/static", StaticFiles(directory=str(_contrib_static)), name="contrib_static")
 app.include_router(crowd_api_router)
-_contrib_static = Path(__file__).resolve().parents[1] / "contrib" / "static"
-app.mount("/contrib/static", StaticFiles(directory=str(_contrib_static)), name="contrib_static")
 log = get_logger("api")
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    init_db()
+    settings = get_settings()
+    # Crowd-only public hosts still need contrib tables; skip wallet init noise when possible.
+    if not settings.crowd_surface_only:
+        init_db()
     init_contrib_db()
     Path("media/contrib_audio").mkdir(parents=True, exist_ok=True)
-    settings = get_settings()
     if settings.env == "production":
         weak = ("CHANGE_ME", "dev_only", "lebne_jwt_secret")
         secret = settings.jwt_secret or ""
@@ -85,6 +120,9 @@ async def on_startup() -> None:
             raise RuntimeError("Production OIDC mode requires LEBNE_OIDC_JWKS_URL")
         if settings.contrib_legacy_enabled:
             raise RuntimeError("Disable LEBNE_CONTRIB_LEGACY_ENABLED in production (use /crowd/v1)")
+        origins = [o.strip() for o in (settings.cors_origins or "").split(",") if o.strip()]
+        if not origins or "*" in origins:
+            raise RuntimeError("Production requires an explicit LEBNE_CORS_ORIGINS allowlist")
     if settings.contrib_legacy_enabled and settings.contrib_admin_password in {
         "",
         "CHANGE_ME_CONTRIB_ADMIN",

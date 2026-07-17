@@ -1,0 +1,33 @@
+# Render Blueprint — free web service for crowd API (Neon Postgres external).
+# Dashboard: New → Blueprint → connect this repo, or create Web Service manually.
+services:
+  - type: web
+    name: lebne-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -e .
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: LEBNE_ENV
+        value: production
+      - key: LEBNE_CROWD_SURFACE_ONLY
+        value: "true"
+      - key: LEBNE_CONTRIB_LEGACY_ENABLED
+        value: "false"
+      - key: LEBNE_EMBEDDING_BACKEND
+        value: hash
+      - key: LEBNE_SESSION_BACKEND
+        value: memory
+      - key: LEBNE_CORS_ORIGINS
+        value: https://lebne.vercel.app
+      - key: LEBNE_PUBLIC_BASE_URL
+        sync: false
+      - key: LEBNE_JWT_SECRET
+        generateValue: true
+      - key: LEBNE_DATABASE_URL
+        sync: false
+      - key: LEBNE_CONTRIB_DATABASE_URL
+        sync: false

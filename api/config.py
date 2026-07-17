@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     contrib_admin_password: str = "CHANGE_ME_CONTRIB_ADMIN"
     # Legacy HTML /contrib + cookie admin — OFF by default (use Next.js + /crowd/v1)
     contrib_legacy_enabled: bool = False
+    # When True (recommended on public Render): only /crowd/v1 + /health are served.
+    # Wallet/chat/legacy routes return 404 so a public API cannot be abused for those surfaces.
+    crowd_surface_only: bool = False
     admin_bootstrap_email: str | None = None
     cors_origins: str = "http://localhost:3000"
     crowd_auth_rate_limit: int = 20
