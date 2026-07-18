@@ -13,8 +13,13 @@ export async function GET(req: Request) {
   if (!token) return clientError(403, "Owner only");
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q");
-  const qs = q ? `?q=${encodeURIComponent(q.slice(0, 200))}` : "";
-  const { res, data } = await backendFetch(`/crowd/v1/admin/approved${qs}`, { token });
+  const page = searchParams.get("page") || "1";
+  const limit = searchParams.get("limit") || "20";
+  const params = new URLSearchParams();
+  if (q) params.set("q", q.slice(0, 200));
+  params.set("page", page);
+  params.set("limit", limit);
+  const { res, data } = await backendFetch(`/crowd/v1/admin/approved?${params}`, { token });
   if (!res.ok) return proxyJson(res, null, "Approved list failed");
   return proxyJson(res, data, "Approved list failed");
 }

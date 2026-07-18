@@ -229,6 +229,13 @@ export function AdminClient({
   const [daily, setDaily] = useState<Daily>({ used: 0, limit: null, remaining: null });
   const [consensusNeeded, setConsensusNeeded] = useState(3);
   const [booted, setBooted] = useState(false);
+  const [approvedPage, setApprovedPage] = useState(1);
+  const [approvedTotal, setApprovedTotal] = useState(0);
+  const [approvedHasMore, setApprovedHasMore] = useState(false);
+  const [inboxPage, setInboxPage] = useState(1);
+  const [inboxTotal, setInboxTotal] = useState(0);
+  const [inboxHasMore, setInboxHasMore] = useState(false);
+  const PAGE_SIZE = 20;
 
   const flash = useCallback((msg: string) => {
     setToast(msg);
@@ -250,17 +257,59 @@ export function AdminClient({
     setEdits((prev) => ({ ...prev, ...tMap }));
   }, []);
 
+  const applyPendingPage = useCallback((pending: {
+    items?: Item[];
+    daily?: Daily;
+    consensusNeeded?: number;
+    page?: number;
+    total?: number;
+    hasMore?: boolean;
+  }) => {
+    const list: Item[] = pending.items || [];
+    setItems(list);
+    setDaily(pending.daily || { used: 0, limit: null, remaining: null });
+    if (pending.consensusNeeded) setConsensusNeeded(pending.consensusNeeded);
+    setInboxPage(pending.page || 1);
+    setInboxTotal(pending.total ?? list.length);
+    setInboxHasMore(Boolean(pending.hasMore));
+    const map: Record<string, string> = {};
+    for (const it of list) map[it.id] = it.text;
+    setEdits((prev) => ({ ...prev, ...map }));
+    setIndex(0);
+  }, []);
+
   const loadApproved = useCallback(
-    async (q = "") => {
+    async (q = "", page = 1) => {
       if (!isOwner) return;
-      const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : "";
-      const res = await fetch(`/api/admin/approved${qs}`);
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_SIZE),
+      });
+      if (q.trim()) params.set("q", q.trim());
+      const res = await fetch(`/api/admin/approved?${params}`);
       if (!res.ok) return;
       const data = await res.json();
       applyApprovedList(data.items || []);
+      setApprovedPage(data.page || page);
+      setApprovedTotal(data.total ?? (data.items || []).length);
+      setApprovedHasMore(Boolean(data.hasMore));
     },
     [applyApprovedList, isOwner],
   );
+
+  const loadInboxPage = useCallback(async (page = 1) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(PAGE_SIZE),
+    });
+    const res = await fetch(`/api/admin/pending?${params}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      flash(data.error || "Could not load inbox");
+      return;
+    }
+    applyPendingPage(data);
+  }, [applyPendingPage, flash]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -271,26 +320,27 @@ export function AdminClient({
       const data = await bootRes.json().catch(() => ({}));
       setLoading(false);
       const pending = data.pending || {};
-      const list: Item[] = pending.items || [];
-      setItems(list);
-      setDaily(pending.daily || { used: 0, limit: null, remaining: null });
-      if (pending.consensusNeeded) setConsensusNeeded(pending.consensusNeeded);
-      const map: Record<string, string> = {};
-      for (const it of list) map[it.id] = it.text;
-      setEdits((prev) => ({ ...prev, ...map }));
-      setIndex(0);
+      applyPendingPage(pending);
       if (!booted) {
-        setTab(list.length > 0 || !isOwner ? "inbox" : "people");
+        setTab((pending.items || []).length > 0 || !isOwner ? "inbox" : "people");
         setBooted(true);
       }
       if (data.users?.users) setUsers(data.users.users);
-      if (data.approved?.items) applyApprovedList(data.approved.items);
+      if (data.approved?.items) {
+        applyApprovedList(data.approved.items);
+        setApprovedPage(data.approved.page || 1);
+        setApprovedTotal(data.approved.total ?? data.approved.items.length);
+        setApprovedHasMore(Boolean(data.approved.hasMore));
+      }
+      if (data.ownerBackfilled > 0) {
+        flash(`Moved ${data.ownerBackfilled} of your takes into Approved`);
+      }
       return;
     }
 
-    const pendingReq = fetch("/api/admin/pending");
+    const pendingReq = fetch(`/api/admin/pending?page=1&limit=${PAGE_SIZE}`);
     const usersReq = isOwner ? fetch("/api/admin/users") : Promise.resolve(null);
-    const approvedReq = isOwner ? loadApproved("") : Promise.resolve();
+    const approvedReq = isOwner ? loadApproved("", 1) : Promise.resolve();
     const [pRes, uRes] = await Promise.all([pendingReq, usersReq]);
     await approvedReq;
     const pData = await pRes.json().catch(() => ({}));
@@ -300,23 +350,16 @@ export function AdminClient({
       flash(pData.error || "Could not load admin");
       return;
     }
-    const list: Item[] = pData.items || [];
-    setItems(list);
-    setDaily(pData.daily || { used: 0, limit: null, remaining: null });
-    if (pData.consensusNeeded) setConsensusNeeded(pData.consensusNeeded);
-    const map: Record<string, string> = {};
-    for (const it of list) map[it.id] = it.text;
-    setEdits((prev) => ({ ...prev, ...map }));
-    setIndex(0);
+    applyPendingPage(pData);
     if (!booted) {
-      setTab(list.length > 0 || !isOwner ? "inbox" : "people");
+      setTab((pData.items || []).length > 0 || !isOwner ? "inbox" : "people");
       setBooted(true);
     }
     if (uRes && uRes.ok) {
       const uData = await uRes.json();
       setUsers(uData.users || []);
     }
-  }, [applyApprovedList, booted, flash, isOwner, loadApproved]);
+  }, [applyApprovedList, applyPendingPage, booted, flash, isOwner, loadApproved]);
 
   useEffect(() => {
     void load();
@@ -328,7 +371,10 @@ export function AdminClient({
 
   useEffect(() => {
     if (tab !== "approved" || !isOwner) return;
-    const t = window.setTimeout(() => void loadApproved(approvedQuery), 280);
+    const t = window.setTimeout(() => {
+      setApprovedPage(1);
+      void loadApproved(approvedQuery, 1);
+    }, 280);
     return () => window.clearTimeout(t);
   }, [approvedQuery, isOwner, loadApproved, tab]);
 
@@ -337,14 +383,14 @@ export function AdminClient({
   const stats = useMemo(() => {
     const totalDone = users.reduce((s, u) => s + u.progress.done, 0);
     const totalApproved =
-      approved.length || users.reduce((s, u) => s + u.submissions.approved, 0);
+      approvedTotal || users.reduce((s, u) => s + u.submissions.approved, 0);
     return {
-      queue: items.length,
+      queue: inboxTotal || items.length,
       people: users.length,
       totalApproved,
       totalDone,
     };
-  }, [users, items, approved.length]);
+  }, [users, items.length, approvedTotal, inboxTotal]);
 
   const sortedUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -398,7 +444,7 @@ export function AdminClient({
     }
     flash("Approved item updated");
     setEditingId(null);
-    await loadApproved(approvedQuery);
+    await loadApproved(approvedQuery, approvedPage);
   }
 
   async function review(action: "approve" | "reject") {
@@ -424,7 +470,7 @@ export function AdminClient({
       flash("Declined — progress removed");
     } else if (data.exported) {
       flash(isOwner ? "Approved · exported" : "Consensus reached · exported");
-      if (isOwner) void loadApproved(approvedQuery);
+      if (isOwner) void loadApproved(approvedQuery, 1);
     } else {
       const c = data.approvals?.count ?? 0;
       const n = data.approvals?.needed ?? consensusNeeded;
@@ -434,7 +480,11 @@ export function AdminClient({
     if (action === "reject" || data.exported) {
       const nextItems = items.filter((i) => i.id !== current.id);
       setItems(nextItems);
+      setInboxTotal((t) => Math.max(0, t - 1));
       setIndex((i) => Math.min(i, Math.max(0, nextItems.length - 1)));
+      if (nextItems.length === 0 && inboxHasMore) {
+        void loadInboxPage(inboxPage);
+      }
     } else if (data.approvals) {
       setItems((list) =>
         list.map((it) =>
@@ -817,6 +867,39 @@ export function AdminClient({
               })}
             </ul>
           )}
+          {approvedTotal > 0 ? (
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-[var(--muted)] sm:text-base">
+                Page {approvedPage} · {approvedTotal.toLocaleString()} approved
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn-ghost px-5 py-2.5 text-sm"
+                  disabled={approvedPage <= 1 || busy}
+                  onClick={() => {
+                    const p = approvedPage - 1;
+                    setApprovedPage(p);
+                    void loadApproved(approvedQuery, p);
+                  }}
+                >
+                  ← Prev page
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost px-5 py-2.5 text-sm"
+                  disabled={!approvedHasMore || busy}
+                  onClick={() => {
+                    const p = approvedPage + 1;
+                    setApprovedPage(p);
+                    void loadApproved(approvedQuery, p);
+                  }}
+                >
+                  Next page →
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : tab === "people" && isOwner ? (
         <section>
@@ -1085,7 +1168,32 @@ export function AdminClient({
                 >
                   Skip →
                 </button>
+                {inboxPage > 1 || inboxHasMore ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-ghost flex-1 px-5 py-3 text-sm sm:flex-none sm:px-8 sm:py-4 sm:text-xl"
+                      disabled={inboxPage <= 1 || busy}
+                      onClick={() => void loadInboxPage(inboxPage - 1)}
+                    >
+                      ← Prev page
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost flex-1 px-5 py-3 text-sm sm:flex-none sm:px-8 sm:py-4 sm:text-xl"
+                      disabled={!inboxHasMore || busy}
+                      onClick={() => void loadInboxPage(inboxPage + 1)}
+                    >
+                      Next page →
+                    </button>
+                  </>
+                ) : null}
               </div>
+              {inboxTotal > 0 ? (
+                <p className="text-sm text-[var(--muted)]">
+                  Inbox page {inboxPage} · {inboxTotal.toLocaleString()} open
+                </p>
+              ) : null}
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3">
                 <button
                   type="button"

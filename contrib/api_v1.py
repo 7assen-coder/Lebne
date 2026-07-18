@@ -668,6 +668,10 @@ def submit(
         db.rollback()
         _mark_contributed()
 
+    role = effective_role(user)
+    now = datetime.now(timezone.utc)
+    # Owner Contribute → approved + export immediately (otherwise self-rows never leave pending).
+    auto_approve = role == ROLE_OWNER
     sub = Submission(
         prompt_id=prompt.id,
         user_id=user.id,
@@ -677,13 +681,34 @@ def submit(
         audio_path=None,
         audio_id=audio_id,
         contributor_note=(body.note or "").strip() or None,
-        status="pending",
+        status="approved" if auto_approve else "pending",
+        reviewed_by=user.id if auto_approve else None,
+        reviewed_at=now if auto_approve else None,
     )
     db.add(sub)
     db.flush()
     link_asset_to_submission(db, audio_id, sub)
+    if auto_approve:
+        # Ensure prompt relationship for export row intent
+        if sub.prompt is None:
+            sub.prompt = prompt
+        _audit(
+            db,
+            actor_id=user.id,
+            action="approve",
+            entity_type="submission",
+            entity_id=sub.id,
+            detail={"role": role, "mode": "owner_auto"},
+        )
+        _export_submission(db, sub, user, mode="owner", voters=[])
     db.commit()
-    return {"ok": True, "progress": _progress(db, user.id)}
+    return {
+        "ok": True,
+        "progress": _progress(db, user.id),
+        "status": sub.status,
+        "exported": auto_approve,
+        "submissionId": sub.id,
+    }
 
 
 class SkipBody(BaseModel):
@@ -908,17 +933,70 @@ def admin_set_role(
     return {"ok": True, "user": _user_out(target)}
 
 
+def _page_args(page: int | None, limit: int | None) -> tuple[int, int, int]:
+    """Return (page, limit, offset) with sane clamps."""
+    p = max(1, int(page or 1))
+    lim = max(1, min(int(limit or 20), 50))
+    return p, lim, (p - 1) * lim
+
+
+def _backfill_owner_pending(db: Session, actor: CrowdUser) -> int:
+    """Promote leftover owner Contribute rows that were stuck as pending."""
+    if effective_role(actor) != ROLE_OWNER:
+        return 0
+    stuck = db.scalars(
+        select(Submission)
+        .options(joinedload(Submission.prompt))
+        .where(
+            Submission.user_id == actor.id,
+            Submission.status.in_(OPEN_STATUSES),
+        )
+        .limit(200)
+    ).unique().all()
+    if not stuck:
+        return 0
+    now = datetime.now(timezone.utc)
+    n = 0
+    for sub in stuck:
+        if not sub.prompt:
+            continue
+        sub.status = "approved"
+        sub.reviewed_by = actor.id
+        sub.reviewed_at = now
+        _audit(
+            db,
+            actor_id=actor.id,
+            action="approve",
+            entity_type="submission",
+            entity_id=sub.id,
+            detail={"role": ROLE_OWNER, "mode": "owner_backfill"},
+        )
+        _export_submission(db, sub, actor, mode="owner", voters=[])
+        n += 1
+    if n:
+        db.commit()
+    return n
+
+
 @router.get("/admin/bootstrap")
 def admin_bootstrap(
     actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
     db: Annotated[Session, Depends(get_contrib_session)],
 ) -> dict:
     """One round-trip for admin dashboard cold load (pending + optional owner data)."""
-    pending = admin_pending(actor, db)
-    payload: dict = {"pending": pending, "users": None, "approved": None}
+    backfilled = 0
+    if effective_role(actor) == ROLE_OWNER:
+        backfilled = _backfill_owner_pending(db, actor)
+    pending = admin_pending(actor, db, page=1, limit=20)
+    payload: dict = {
+        "pending": pending,
+        "users": None,
+        "approved": None,
+        "ownerBackfilled": backfilled,
+    }
     if effective_role(actor) == ROLE_OWNER:
         payload["users"] = admin_users(actor, db)
-        payload["approved"] = admin_approved(actor, db, q=None, limit=80)
+        payload["approved"] = admin_approved(actor, db, q=None, page=1, limit=20)
     return payload
 
 
@@ -926,19 +1004,26 @@ def admin_bootstrap(
 def admin_pending(
     actor: Annotated[CrowdUser, Depends(require_reviewer_or_owner)],
     db: Annotated[Session, Depends(get_contrib_session)],
+    page: int = 1,
+    limit: int = 20,
 ) -> dict:
+    page, limit, offset = _page_args(page, limit)
+    role = effective_role(actor)
+    # Reviewers never see own rows; owners see own leftovers so they can approve.
+    filters = [Submission.status.in_(OPEN_STATUSES)]
+    if role != ROLE_OWNER:
+        filters.append(or_(Submission.user_id.is_(None), Submission.user_id != actor.id))
+
+    total = db.scalar(select(func.count()).select_from(Submission).where(*filters)) or 0
     items = db.scalars(
         select(Submission)
         .options(joinedload(Submission.prompt), joinedload(Submission.user))
-        .where(
-            Submission.status.in_(OPEN_STATUSES),
-            or_(Submission.user_id.is_(None), Submission.user_id != actor.id),
-        )
+        .where(*filters)
         .order_by(Submission.created_at.asc())
-        .limit(80)
+        .offset(offset)
+        .limit(limit)
     ).unique().all()
 
-    role = effective_role(actor)
     used = _reviewer_actions_today(db, actor.id)
     daily = {
         "used": used,
@@ -949,11 +1034,11 @@ def admin_pending(
     return {
         "daily": daily,
         "consensusNeeded": CONSENSUS_NEEDED,
-        "items": [
-            _submission_audio_item(db, s)
-            for s in items
-            if s.prompt
-        ],
+        "items": [_submission_audio_item(db, s) for s in items if s.prompt],
+        "page": page,
+        "limit": limit,
+        "total": int(total),
+        "hasMore": offset + limit < int(total),
     }
 
 
@@ -970,12 +1055,13 @@ def admin_review(
     ).first()
     if not sub or not sub.prompt or sub.status not in OPEN_STATUSES:
         raise HTTPException(status_code=404, detail="Not found")
-    if sub.user_id == actor.id:
-        raise HTTPException(status_code=400, detail="Cannot review your own submission")
 
     daily = _enforce_daily_limit(db, actor)
     role = effective_role(actor)
     now = datetime.now(timezone.utc)
+    # Reviewers cannot self-review; owners may approve leftover own pending rows.
+    if sub.user_id == actor.id and role != ROLE_OWNER:
+        raise HTTPException(status_code=400, detail="Cannot review your own submission")
 
     if body.action == "reject":
         sub.status = "rejected"
@@ -1119,40 +1205,48 @@ def admin_approved(
     owner: Annotated[CrowdUser, Depends(require_owner)],
     db: Annotated[Session, Depends(get_contrib_session)],
     q: str | None = None,
-    limit: int = 80,
+    page: int = 1,
+    limit: int = 20,
 ) -> dict:
     del owner  # auth gate only
-    limit = max(1, min(limit, 200))
-    stmt = (
+    page, limit, offset = _page_args(page, limit)
+    needle = (q or "").strip().lower()
+
+    filters = [Submission.status == "approved"]
+    if needle:
+        # Filter before pagination so search is not clipped by LIMIT.
+        filters.append(
+            or_(
+                Submission.text.ilike(f"%{needle}%"),
+                Submission.answer_text.ilike(f"%{needle}%"),
+                PromptItem.source_text.ilike(f"%{needle}%"),
+                CrowdUser.name.ilike(f"%{needle}%"),
+                CrowdUser.email.ilike(f"%{needle}%"),
+            )
+        )
+
+    base = (
         select(Submission)
-        .options(
+        .join(PromptItem, Submission.prompt_id == PromptItem.id)
+        .outerjoin(CrowdUser, Submission.user_id == CrowdUser.id)
+        .where(*filters)
+    )
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    items = db.scalars(
+        base.options(
             joinedload(Submission.prompt),
             joinedload(Submission.user),
             joinedload(Submission.reviewer),
         )
-        .where(Submission.status == "approved")
         .order_by(Submission.reviewed_at.desc().nulls_last(), Submission.id.desc())
+        .offset(offset)
         .limit(limit)
-    )
-    items = db.scalars(stmt).unique().all()
-    needle = (q or "").strip().lower()
+    ).unique().all()
+
     out = []
     for s in items:
         if not s.prompt:
             continue
-        if needle:
-            blob = " ".join(
-                [
-                    s.text or "",
-                    s.answer_text or "",
-                    s.prompt.source_text or "",
-                    s.user.name if s.user else "",
-                    s.user.email if s.user else "",
-                    s.reviewer.name if s.reviewer else "",
-                ]
-            ).lower()
-            if needle not in blob:
-                continue
         fields = _submission_audio_fields(db, s)
         out.append(
             {
@@ -1176,7 +1270,13 @@ def admin_approved(
                 },
             }
         )
-    return {"items": out, "total": len(out)}
+    return {
+        "items": out,
+        "page": page,
+        "limit": limit,
+        "total": int(total),
+        "hasMore": offset + limit < int(total),
+    }
 
 
 @router.post("/admin/approved/{submission_id}")
