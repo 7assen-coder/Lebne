@@ -147,6 +147,42 @@ def scrub_all_locale_files(out_dir: Path = DEFAULT_OUT_DIR, *, force: bool = Fal
     return counts
 
 
+def rows_from_approved_submissions(
+    submissions: list,
+    *,
+    locale: str | None = None,
+) -> dict[str, list[dict]]:
+    """Build training rows from approved Submission ORM objects (include answer_text)."""
+    by_locale: dict[str, list[dict]] = {loc: [] for loc in LOCALES}
+    for sub in submissions:
+        prompt = getattr(sub, "prompt", None)
+        loc = (getattr(sub, "target_locale", None) or "").strip()
+        if not prompt or loc not in LOCALES:
+            continue
+        if locale and loc != locale:
+            continue
+        by_locale[loc].append(
+            row_from_submission(
+                submission_id=sub.id,
+                intent=prompt.intent,
+                locale=loc,
+                text=sub.text,
+                answer=getattr(sub, "answer_text", None),
+                contributor_id=getattr(sub, "user_id", None),
+            )
+        )
+    return by_locale
+
+
+def jsonl_bytes_for_locale(rows: list[dict]) -> bytes:
+    """UTF-8 JSONL payload (one sanitized object per line)."""
+    lines = [
+        json.dumps(sanitize_training_row(row), ensure_ascii=False) for row in rows
+    ]
+    body = ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+    return body
+
+
 def rewrite_locale_files(rows_by_locale: dict[str, list[dict]], out_dir: Path = DEFAULT_OUT_DIR) -> dict[str, int]:
     counts: dict[str, int] = {}
     out_dir.mkdir(parents=True, exist_ok=True)

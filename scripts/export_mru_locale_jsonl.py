@@ -41,6 +41,8 @@ def main() -> int:
                     intent=sub.prompt.intent,
                     locale=sub.target_locale,
                     text=sub.text,
+                    answer=sub.answer_text,
+                    contributor_id=sub.user_id,
                 )
             )
 

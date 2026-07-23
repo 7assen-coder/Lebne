@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, not_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -43,9 +43,10 @@ from contrib.db import get_contrib_session
 from contrib.export_util import (
     LOCALES,
     append_approved_row,
-    count_nonempty_lines,
+    jsonl_bytes_for_locale,
     locale_path,
     row_from_submission,
+    rows_from_approved_submissions,
     upsert_approved_row,
 )
 from contrib.media_util import MAX_AUDIO_BYTES, MEDIA_DIR
@@ -1385,23 +1386,29 @@ def admin_submission_audio(
 
 
 @router.get("/admin/exports")
-def list_exports(owner: Annotated[CrowdUser, Depends(require_owner)]) -> dict:
-    """Owner-only: list training JSONL files (not public HTTP)."""
+def list_exports(
+    owner: Annotated[CrowdUser, Depends(require_owner)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> dict:
+    """Owner-only: list training export sizes (counts from approved DB rows)."""
     _ = owner
     out = []
     for locale in LOCALES:
+        n = db.scalar(
+            select(func.count())
+            .select_from(Submission)
+            .where(Submission.status == "approved", Submission.target_locale == locale)
+        ) or 0
         path = locale_path(locale)
-        if path.is_file():
-            out.append(
-                {
-                    "locale": locale,
-                    "filename": path.name,
-                    "bytes": path.stat().st_size,
-                    "lines": count_nonempty_lines(path),
-                }
-            )
-        else:
-            out.append({"locale": locale, "filename": path.name, "bytes": 0, "lines": 0})
+        out.append(
+            {
+                "locale": locale,
+                "filename": path.name,
+                "bytes": path.stat().st_size if path.is_file() else 0,
+                "lines": int(n),
+                "source": "database",
+            }
+        )
     return {"items": out}
 
 
@@ -1409,19 +1416,43 @@ def list_exports(owner: Annotated[CrowdUser, Depends(require_owner)]) -> dict:
 def download_export(
     locale: str,
     owner: Annotated[CrowdUser, Depends(require_owner)],
-) -> FileResponse:
-    """Owner-only download of a training JSONL file."""
+    db: Annotated[Session, Depends(get_contrib_session)],
+) -> Response:
+    """Owner-only download: rebuild JSONL from all approved DB rows (not ephemeral disk)."""
     _ = owner
     locale = locale.lower().strip()
     if locale not in LOCALES:
         raise HTTPException(status_code=400, detail="Invalid locale")
-    path = locale_path(locale)
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Export not found")
-    return FileResponse(
-        path,
-        media_type="application/x-ndjson",
-        filename=path.name,
+
+    subs = db.scalars(
+        select(Submission)
+        .options(joinedload(Submission.prompt))
+        .where(Submission.status == "approved", Submission.target_locale == locale)
+        .order_by(Submission.id.asc())
+    ).unique().all()
+    by_locale = rows_from_approved_submissions(list(subs), locale=locale)
+    rows = by_locale.get(locale) or []
+    if not rows:
+        raise HTTPException(status_code=404, detail="No approved rows for this locale yet")
+
+    payload = jsonl_bytes_for_locale(rows)
+    # Best-effort refresh local file for ops/scripts (ignored if disk is ephemeral).
+    try:
+        path = locale_path(locale)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    except OSError:
+        pass
+
+    return Response(
+        content=payload,
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="lebne_mru_{locale}.jsonl"',
+            "Cache-Control": "private, no-store",
+            "X-Lebne-Export-Rows": str(len(rows)),
+            "X-Lebne-Export-Source": "database",
+        },
     )
 
 
