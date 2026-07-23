@@ -52,8 +52,14 @@ Website: `/contrib/` (see [docs/contrib-deploy.md](../docs/contrib-deploy.md)).
   - `lebne_mru_ar.jsonl`
   - `lebne_mru_hassaniya.jsonl`
 
+`lebne_mru_hassaniya.jsonl` expands each approved rewrite into **up to three** training
+rows (EN / FR / AR user turns → same Hassaniya assistant) so the model can answer when
+the client asks in any of those languages. Web download fills missing views via cached/MT
+when possible (`X-Lebne-Export-Expanded: en,fr,ar`).
+
 ```bash
-python scripts/export_mru_locale_jsonl.py   # rebuild from approved DB rows
+python scripts/export_mru_locale_jsonl.py                 # source + cached views only
+python scripts/export_mru_locale_jsonl.py --fill-missing-views  # same as web download
 ```
 
 ## FAQ JSONL (`data/faq/faq.jsonl`)

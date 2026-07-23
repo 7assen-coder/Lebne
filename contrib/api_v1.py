@@ -42,12 +42,12 @@ from contrib.crowd_auth import (
 from contrib.db import get_contrib_session
 from contrib.export_util import (
     LOCALES,
-    append_approved_row,
+    append_approved_rows,
     jsonl_bytes_for_locale,
     locale_path,
-    row_from_submission,
+    replace_submission_export_rows,
     rows_from_approved_submissions,
-    upsert_approved_row,
+    rows_from_submission,
 )
 from contrib.media_util import MAX_AUDIO_BYTES, MEDIA_DIR
 from contrib.models import (
@@ -366,7 +366,9 @@ def _export_submission(
     voters: list[dict] | None = None,
     replace: bool = False,
 ) -> dict:
-    row = row_from_submission(
+    # One training row per available EN/FR/AR source → same Hassaniya assistant.
+    # Approve path uses cached/source only (no live MT). Download fills missing views.
+    rows = rows_from_submission(
         submission_id=sub.id,
         intent=sub.prompt.intent if sub.prompt else "faq",
         locale=sub.target_locale,
@@ -375,13 +377,21 @@ def _export_submission(
         source_text=sub.prompt.source_text if sub.prompt else None,
         source_locale=sub.prompt.source_locale if sub.prompt else None,
         contributor_id=sub.user_id,
+        prompt=sub.prompt,
+        db=db,
+        fill_missing_views=False,
     )
+    row = rows[0] if rows else {}
     # Attribution / audio stay in DB + audit — never in training JSONL
     try:
         if replace:
-            upsert_approved_row(row)
+            replace_submission_export_rows(
+                submission_id=sub.id,
+                locale=sub.target_locale,
+                rows=rows,
+            )
         else:
-            append_approved_row(row)
+            append_approved_rows(rows)
     except OSError:
         pass
     if not replace:
@@ -395,6 +405,8 @@ def _export_submission(
                 "locale": sub.target_locale,
                 "mode": mode,
                 "voters": voters or [],
+                "sourceViews": [r.get("source_locale") for r in rows],
+                "exportRows": len(rows),
                 "accepter": {"id": actor.id, "name": actor.name, "email": actor.email},
                 "text": sub.text,
                 "answer": sub.answer_text,
@@ -1408,7 +1420,10 @@ def list_exports(
                 "filename": path.name,
                 "bytes": path.stat().st_size if path.is_file() else 0,
                 "lines": int(n),
+                "approvedSubmissions": int(n),
                 "source": "database",
+                "expand": "en,fr,ar",
+                "note": "Download expands each submission into EN/FR/AR → Hassaniya rows",
             }
         )
     return {"items": out}
@@ -1432,7 +1447,13 @@ def download_export(
         .where(Submission.status == "approved", Submission.target_locale == locale)
         .order_by(Submission.id.asc())
     ).unique().all()
-    by_locale = rows_from_approved_submissions(list(subs), locale=locale)
+    # Expand each approved Hassaniya into EN/FR/AR → same assistant (fill missing via MT).
+    by_locale = rows_from_approved_submissions(
+        list(subs),
+        locale=locale,
+        db=db,
+        fill_missing_views=True,
+    )
     rows = by_locale.get(locale) or []
     if not rows:
         raise HTTPException(status_code=404, detail="No approved rows for this locale yet")
@@ -1453,7 +1474,9 @@ def download_export(
             "Content-Disposition": f'attachment; filename="lebne_mru_{locale}.jsonl"',
             "Cache-Control": "private, no-store",
             "X-Lebne-Export-Rows": str(len(rows)),
+            "X-Lebne-Export-Submissions": str(len(subs)),
             "X-Lebne-Export-Source": "database",
+            "X-Lebne-Export-Expanded": "en,fr,ar",
         },
     )
 

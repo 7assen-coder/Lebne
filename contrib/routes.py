@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.config import Settings, get_settings
 from contrib.db import get_contrib_session
-from contrib.export_util import append_approved_row, row_from_submission
+from contrib.export_util import append_approved_rows, rows_from_submission
 from contrib.media_util import MAX_AUDIO_BYTES, MEDIA_DIR, safe_audio_path
 from contrib.models import PromptItem, Submission
 from contrib.stt import transcribe_audio
@@ -275,15 +275,18 @@ async def admin_approve(
     sub.status = "approved"
     sub.reviewed_at = datetime.now(timezone.utc)
     db.commit()
-    row = row_from_submission(
+    rows = rows_from_submission(
         submission_id=sub.id,
         intent=sub.prompt.intent,
         locale=sub.target_locale,
         text=sub.text,
         source_text=sub.prompt.source_text if sub.prompt else None,
         source_locale=sub.prompt.source_locale if sub.prompt else None,
+        prompt=sub.prompt,
+        db=db,
+        fill_missing_views=False,
     )
-    append_approved_row(row)
+    append_approved_rows(rows)
     return RedirectResponse(url="/admin/contrib", status_code=303)
 
 

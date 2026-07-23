@@ -696,7 +696,8 @@ export function AdminClient({
               <h2 className="font-display text-3xl sm:text-5xl md:text-6xl">Approved</h2>
               <p className="mt-2 max-w-2xl text-base text-[var(--muted)] sm:mt-3 sm:text-xl lg:text-2xl">
                 Source · Hassaniya · who accepted. Edit anything that looks wrong or like a joke —
-                owner only. Training JSONL has no emails — download is owner-only.
+                owner only. Download expands each approved item into EN / FR / AR → same
+                Hassaniya reply (when those views exist or can be filled). No emails in JSONL.
               </p>
             </div>
             <div className="flex w-full max-w-md flex-col gap-3">
@@ -707,7 +708,7 @@ export function AdminClient({
                 onChange={(e) => setApprovedQuery(e.target.value)}
               />
               <a href="/api/admin/exports/hassaniya" className="btn-ghost text-center">
-                Download Hassaniya JSONL
+                Download Hassaniya JSONL (EN+FR+AR)
               </a>
             </div>
           </div>
