@@ -372,6 +372,8 @@ def _export_submission(
         locale=sub.target_locale,
         text=sub.text,
         answer=sub.answer_text,
+        source_text=sub.prompt.source_text if sub.prompt else None,
+        source_locale=sub.prompt.source_locale if sub.prompt else None,
         contributor_id=sub.user_id,
     )
     # Attribution / audio stay in DB + audit — never in training JSONL

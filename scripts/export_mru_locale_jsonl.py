@@ -42,6 +42,8 @@ def main() -> int:
                     locale=sub.target_locale,
                     text=sub.text,
                     answer=sub.answer_text,
+                    source_text=sub.prompt.source_text,
+                    source_locale=sub.prompt.source_locale,
                     contributor_id=sub.user_id,
                 )
             )

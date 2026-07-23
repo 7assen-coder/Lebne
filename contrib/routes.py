@@ -280,6 +280,8 @@ async def admin_approve(
         intent=sub.prompt.intent,
         locale=sub.target_locale,
         text=sub.text,
+        source_text=sub.prompt.source_text if sub.prompt else None,
+        source_locale=sub.prompt.source_locale if sub.prompt else None,
     )
     append_approved_row(row)
     return RedirectResponse(url="/admin/contrib", status_code=303)

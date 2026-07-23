@@ -35,12 +35,30 @@ def row_from_submission(
     locale: str,
     text: str,
     answer: str | None = None,
+    source_text: str | None = None,
+    source_locale: str | None = None,
     contributor_id: int | None = None,
 ) -> dict:
-    """Training row: messages + opaque ids only (no emails/names/audio paths)."""
+    """Training row: source question → Hassaniya rewrite (no PII / audio paths).
+
+    messages[0] user = original prompt (FR/AR/EN/…)
+    messages[1] assistant = contributor Hassaniya (or explicit answer when set)
+    """
     split = assign_split(f"{submission_id}:{locale}")
-    assistant = (answer or "").strip() or assistant_reply(intent, locale)
-    return {
+    source = (source_text or "").strip()
+    hassaniya = (text or "").strip()
+    faq_answer = (answer or "").strip()
+
+    if source:
+        user_content = source
+        # Prefer explicit FAQ answer when reviewers filled it; else Hassaniya rewrite.
+        assistant_content = faq_answer or hassaniya or assistant_reply(intent, locale)
+    else:
+        # Legacy fallback when prompt text is missing.
+        user_content = hassaniya or "[empty]"
+        assistant_content = faq_answer or assistant_reply(intent, locale)
+
+    row = {
         "schema_version": SCHEMA_VERSION,
         "id": f"mru-{locale}-{submission_id:06d}",
         "intent": intent,
@@ -49,10 +67,16 @@ def row_from_submission(
         "split": split,
         "contributor_id": contributor_id,
         "messages": [
-            {"role": "user", "content": text.strip()},
-            {"role": "assistant", "content": assistant},
+            {"role": "user", "content": user_content},
+            {"role": "assistant", "content": assistant_content},
         ],
     }
+    if source_locale:
+        row["source_locale"] = source_locale
+    # Keep Hassaniya utterance even when assistant used FAQ answer instead.
+    if hassaniya and hassaniya != assistant_content:
+        row["hassaniya"] = hassaniya
+    return row
 
 
 def sanitize_training_row(row: dict) -> dict:
@@ -168,6 +192,8 @@ def rows_from_approved_submissions(
                 locale=loc,
                 text=sub.text,
                 answer=getattr(sub, "answer_text", None),
+                source_text=getattr(prompt, "source_text", None),
+                source_locale=getattr(prompt, "source_locale", None),
                 contributor_id=getattr(sub, "user_id", None),
             )
         )
