@@ -383,3 +383,71 @@ def highlight_parts(draft_text: str, fixed: str) -> dict:
         left, _, right = text.partition(SLOT_MARK)
         return {"fixed": left.strip(), "editable": right.strip(), "slot_mark": True}
     return {"fixed": "", "editable": text}
+
+
+def mine_my_phrases(texts: list[str], *, min_count: int = 2, top_k: int = 40) -> list[dict]:
+    """Mine repeated Hassaniya phrases from one contributor's past submissions."""
+    from collections import Counter
+
+    ar = re.compile(r"[\u0600-\u06FF]{2,}")
+    c1: Counter[str] = Counter()
+    c2: Counter[str] = Counter()
+    c3: Counter[str] = Counter()
+    for text in texts:
+        toks = ar.findall(text or "")
+        for t in toks:
+            if len(t) >= 3:
+                c1[t] += 1
+        for i in range(len(toks) - 1):
+            c2[" ".join(toks[i : i + 2])] += 1
+        for i in range(len(toks) - 2):
+            c3[" ".join(toks[i : i + 3])] += 1
+    out: list[dict] = []
+    seen: set[str] = set()
+    for ngram, counter in ((3, c3), (2, c2), (1, c1)):
+        for phrase, n in counter.most_common(top_k):
+            if n < min_count or phrase in seen:
+                continue
+            seen.add(phrase)
+            out.append({"phrase": phrase, "count": n, "n": ngram, "tier": "mine"})
+            if len(out) >= top_k:
+                return out
+    return out
+
+
+def source_word_suggestions(text: str, *, limit: int = 16) -> list[dict]:
+    """Hassaniya chips for the current source: full lines + words from best matches."""
+    payload = build_draft(text)
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    def add(phrase: str, *, kind: str, tier: str = "suggest") -> None:
+        p = (phrase or "").strip()
+        if len(p) < 2 or p in seen:
+            return
+        seen.add(p)
+        out.append({"phrase": p, "kind": kind, "tier": tier})
+
+    draft = payload.get("draft") or {}
+    if isinstance(draft, dict) and draft.get("text"):
+        add(str(draft["text"]), kind="line", tier=str(draft.get("source") or "draft"))
+
+    for it in payload.get("items") or []:
+        add(str(it.get("hassaniya") or ""), kind="line", tier=str(it.get("tier") or "gold"))
+        # Also surface tokens from that Hassaniya line for partial insert
+        for tok in re.findall(r"[\u0600-\u06FF]{3,}", str(it.get("hassaniya") or "")):
+            add(tok, kind="word", tier="from_match")
+
+    for t in payload.get("templates") or []:
+        pat = str(t.get("pattern") or "").replace(SLOT_MARK, "").strip()
+        add(pat, kind="template", tier="template")
+
+    for d in payload.get("dialectHints") or []:
+        add(str(d.get("text") or ""), kind="dialect", tier="dialect_hint")
+
+    # Global gold chips as extra completion stems
+    for c in (load_chips().get("chips") or [])[:24]:
+        if str(c.get("tier") or "") == "gold":
+            add(str(c.get("phrase") or ""), kind="chip", tier="gold")
+
+    return out[:limit]

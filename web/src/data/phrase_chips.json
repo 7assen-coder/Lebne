@@ -1,0 +1,698 @@
+{
+  "version": 2,
+  "plan": "banking77_family + Hassaniya-only + Tunisian dialect_hint",
+  "sources": {
+    "banking": [
+      "imported_banking (Banking77 / ArBanking77 / DarijaBanking MSA)"
+    ],
+    "hassaniya": [
+      "lebne_mru_hassaniya (gold)",
+      "Emin009/AI-for-RIM",
+      "hassan-IA/dah",
+      "HASSANIYA-DTCD",
+      "hassan-IA/hassaniya-stories-ocr"
+    ],
+    "dialect_hint": [
+      "SinaLab/ArBanking77 Tunisian test (suggestion-only)"
+    ]
+  },
+  "chips": [
+    {
+      "phrase": "كرتي",
+      "count": 18,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نقد",
+      "count": 10,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شي من",
+      "count": 9,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "الفظه",
+      "count": 9,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "لاش",
+      "count": 8,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "علي",
+      "count": 8,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "ندور",
+      "count": 8,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "كرت",
+      "count": 7,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يغير",
+      "count": 7,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نعمل",
+      "count": 6,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "لين",
+      "count": 6,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "كونتي",
+      "count": 6,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "من الوقت",
+      "count": 5,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "الوقت",
+      "count": 5,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فظتي",
+      "count": 5,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "بسمحال",
+      "count": 5,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "تقد",
+      "count": 5,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "كم من الوقت",
+      "count": 4,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "كم من",
+      "count": 4,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "لاه",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "التحويل",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نحول",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نبدل",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "ماه",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يكاني",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "مانكد",
+      "count": 4,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فم شي من",
+      "count": 3,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شي من الفظه",
+      "count": 3,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نقد نعمل",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نقد نحول",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شي نقد",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فم شي",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نشغل كرتي",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "من الفظه",
+      "count": 3,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شنهي",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "مانقد",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شور",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "جبرتها",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "وقدت",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نشغل",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "عني",
+      "count": 3,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "من الوقت لاه",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يمضي التحويل من",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "التحويل من الصين",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "توقف كرتي عن",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "شي نقد نحول",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فم حد يعمل",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "حد يعمل كرتي",
+      "count": 2,
+      "n": 3,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "الوقت لاه",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يمضي التحويل",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "التحويل من",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "من الصين",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "بسمحال نبدل",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "علي كرتي",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "توقف كرتي",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "كرتي عن",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نخلص بكرتي",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فم حد",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "حد يعمل",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يعمل كرتي",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "وقدت علي",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "لاش مانكد",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "مانكد نعمل",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "ندور نرجع",
+      "count": 2,
+      "n": 2,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "عجلانه",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "المشكلة",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نلغي",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "يمضي",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "الصين",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "نشري",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "بيها",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "حسابي",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "اكثر",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "فيه",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "الرقمية",
+      "count": 2,
+      "n": 1,
+      "source": "lebne_mru_hassaniya",
+      "tier": "gold"
+    },
+    {
+      "phrase": "على",
+      "count": 1907,
+      "n": 1,
+      "source": "imported_banking",
+      "tier": "banking"
+    },
+    {
+      "phrase": "بطاقتي",
+      "count": 1448,
+      "n": 1,
+      "source": "imported_banking",
+      "tier": "banking"
+    },
+    {
+      "phrase": "كيف",
+      "count": 1313,
+      "n": 1,
+      "source": "imported_banking",
+      "tier": "banking"
+    },
+    {
+      "phrase": "يمكنني",
+      "count": 1110,
+      "n": 1,
+      "source": "imported_banking",
+      "tier": "banking"
+    },
+    {
+      "phrase": "إلى",
+      "count": 816,
+      "n": 1,
+      "source": "imported_banking",
+      "tier": "banking"
+    }
+  ],
+  "templates": [
+    {
+      "id": "slot-0",
+      "pattern": "كم من الوقت [X]",
+      "keywords": [
+        "اكم",
+        "بدها",
+        "تحويلة",
+        "مستعجلة",
+        "من",
+        "الصين",
+        "وقت؟",
+        "قديش",
+        "بده",
+        "وقت",
+        "ليوصل",
+        "التحويل",
+        "كم",
+        "من",
+        "الوقت"
+      ],
+      "accept_as_is": false,
+      "count": 3,
+      "source": "mined_gold"
+    },
+    {
+      "id": "slot-1",
+      "pattern": "كم من [X]",
+      "keywords": [
+        "اكم",
+        "بدها",
+        "تحويلة",
+        "مستعجلة",
+        "من",
+        "الصين",
+        "وقت؟",
+        "قديش",
+        "بده",
+        "وقت",
+        "ليوصل",
+        "التحويل",
+        "كم",
+        "من"
+      ],
+      "accept_as_is": false,
+      "count": 3,
+      "source": "mined_gold"
+    },
+    {
+      "id": "slot-2",
+      "pattern": "بسمحال نبدل [X]",
+      "keywords": [
+        "how",
+        "money",
+        "switch",
+        "for",
+        "the",
+        "used",
+        "another",
+        "country",
+        "can",
+        "change",
+        "information",
+        "بسمحال",
+        "نبدل"
+      ],
+      "accept_as_is": false,
+      "count": 2,
+      "source": "mined_gold"
+    },
+    {
+      "id": "slot-3",
+      "pattern": "لاش مانكد [X]",
+      "keywords": [
+        "why",
+        "can",
+        "get",
+        "virtual",
+        "card",
+        "work",
+        "ليش",
+        "ما",
+        "بقدر",
+        "أشوف",
+        "التحويل",
+        "لحسابي؟",
+        "لاش",
+        "مانكد"
+      ],
+      "accept_as_is": false,
+      "count": 2,
+      "source": "mined_gold"
+    },
+    {
+      "id": "slot-4",
+      "pattern": "ندور نرجع [X]",
+      "keywords": [
+        "want",
+        "refund",
+        "the",
+        "things",
+        "bought",
+        "بدي",
+        "أرجع",
+        "أنشط",
+        "بطاقتي،",
+        "فكرت",
+        "اني",
+        "مضيعها",
+        "ندور",
+        "نرجع"
+      ],
+      "accept_as_is": false,
+      "count": 2,
+      "source": "mined_gold"
+    }
+  ]
+}

@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.config import Settings, get_settings
 from api.security.rate_limit import rate_limiter
-from contrib.assist_util import build_draft, load_chips
+from contrib.assist_util import build_draft, load_chips, mine_my_phrases, source_word_suggestions
 from contrib.audio_service import (
     asset_out,
     can_access_audio,
@@ -576,9 +576,44 @@ def assist_suggest(
         return {"ok": True, "draft": None, "items": [], "templates": [], "dialectHints": []}
     lim = max(1, min(int(limit or 3), 5))
     payload = build_draft(text)
-    # Respect limit on similar items
     payload["items"] = (payload.get("items") or [])[:lim]
+    payload["sourceWords"] = source_word_suggestions(text, limit=20)
     return {"ok": True, **payload}
+
+
+@router.get("/assist/my-phrases")
+def assist_my_phrases(
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    db: Annotated[Session, Depends(get_contrib_session)],
+    limit: int = 40,
+) -> dict:
+    """Repeated Hassaniya stems from this contributor's own submissions."""
+    lim = max(5, min(int(limit or 40), 80))
+    texts = list(
+        db.scalars(
+            select(Submission.text).where(
+                Submission.user_id == user.id,
+                Submission.target_locale == TARGET_LOCALE,
+                Submission.text.is_not(None),
+            )
+        ).all()
+    )
+    clean = [str(t).strip() for t in texts if t and str(t).strip() and str(t).strip() != "[voice]"]
+    phrases = mine_my_phrases(clean, min_count=2 if len(clean) >= 4 else 1, top_k=lim)
+    from collections import Counter
+
+    line_counts = Counter(clean)
+    for line, n in line_counts.most_common(lim):
+        if n < 2 and len(clean) >= 4:
+            continue
+        if len(line) < 2:
+            continue
+        if any(p.get("phrase") == line for p in phrases):
+            continue
+        phrases.append({"phrase": line, "count": n, "n": 0, "tier": "mine"})
+        if len(phrases) >= lim:
+            break
+    return {"ok": True, "phrases": phrases[:lim], "submissionCount": len(clean)}
 
 
 @router.post("/audio/presign")

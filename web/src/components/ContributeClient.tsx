@@ -18,28 +18,7 @@ type Prompt = {
 
 type Progress = { done: number; total: number; percent: number };
 
-type Chip = { phrase: string; tier?: string };
-
-type Template = {
-  id?: string;
-  pattern: string;
-  fixed?: string;
-  has_slot?: boolean;
-  accept_as_is?: boolean;
-};
-
-type SuggestItem = { hassaniya: string; tier?: string; score?: number };
-
-type DialectHint = { text: string; dialect?: string; flag?: string };
-
-type Draft = {
-  text: string;
-  source?: string;
-  fixed?: string;
-  slot?: string;
-  has_slot?: boolean;
-  pattern?: string;
-};
+type AssistPhrase = { phrase: string; kind?: string; tier?: string; count?: number };
 
 export function ContributeClient({
   userName,
@@ -59,15 +38,13 @@ export function ContributeClient({
   const [doneAll, setDoneAll] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [error, setError] = useState("");
-  const [chips, setChips] = useState<Chip[]>([]);
-  const [templates, setTemplates] = useState<Template[]>([]);
-  const [matchedTemplates, setMatchedTemplates] = useState<Template[]>([]);
-  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
-  const [dialectHints, setDialectHints] = useState<DialectHint[]>([]);
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [draftRejected, setDraftRejected] = useState(false);
-  const [suggestBusy, setSuggestBusy] = useState(false);
-  const [slotEdit, setSlotEdit] = useState("");
+  const [showFromSource, setShowFromSource] = useState(false);
+  const [showMyRepeats, setShowMyRepeats] = useState(false);
+  const [sourcePhrases, setSourcePhrases] = useState<AssistPhrase[]>([]);
+  const [myPhrases, setMyPhrases] = useState<AssistPhrase[]>([]);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [mineBusy, setMineBusy] = useState(false);
+  const [mineLoaded, setMineLoaded] = useState(false);
   const voiceRef = useRef<VoiceRecorderHandle | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -79,12 +56,8 @@ export function ContributeClient({
     setHassaniya("");
     setAudioId(null);
     setError("");
-    setDraft(null);
-    setDraftRejected(false);
-    setSuggestions([]);
-    setMatchedTemplates([]);
-    setDialectHints([]);
-    setSlotEdit("");
+    setSourcePhrases([]);
+    setShowFromSource(false);
     const res = await fetch(`/api/contribute/next?view=${view}`);
     const data = await res.json();
     setLoading(false);
@@ -99,193 +72,85 @@ export function ContributeClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/contribute/assist");
-        const data = await res.json();
-        if (!cancelled && res.ok) {
-          if (Array.isArray(data.chips)) {
-            setChips(
-              data.chips
-                .map((c: Chip) => ({ phrase: String(c.phrase || "").trim(), tier: c.tier }))
-                .filter((c: Chip) => c.phrase.length >= 2)
-                .slice(0, 24),
-            );
-          }
-          if (Array.isArray(data.templates)) {
-            setTemplates(
-              data.templates
-                .map((t: Template) => ({
-                  id: t.id,
-                  pattern: String(t.pattern || "").trim(),
-                  accept_as_is: Boolean(t.accept_as_is),
-                  has_slot: String(t.pattern || "").includes("[X]"),
-                }))
-                .filter((t: Template) => t.pattern.length >= 2),
-            );
-          }
-        }
-      } catch {
-        /* optional assist */
+  const loadFromSource = useCallback(async (text: string) => {
+    setSourceBusy(true);
+    try {
+      const res = await fetch(
+        `/api/contribute/assist?q=${encodeURIComponent(text)}&limit=5`,
+      );
+      const data = await res.json();
+      const words: AssistPhrase[] = Array.isArray(data.sourceWords)
+        ? data.sourceWords
+            .map((w: AssistPhrase) => ({
+              phrase: String(w.phrase || "").trim(),
+              kind: w.kind,
+              tier: w.tier,
+            }))
+            .filter((w: AssistPhrase) => w.phrase.length >= 2)
+        : [];
+      // Fallback compose if older API without sourceWords
+      if (words.length === 0) {
+        const seen = new Set<string>();
+        const add = (phrase: string, kind: string, tier?: string) => {
+          const p = phrase.trim();
+          if (p.length < 2 || seen.has(p)) return;
+          seen.add(p);
+          words.push({ phrase: p, kind, tier });
+        };
+        if (data.draft?.text) add(String(data.draft.text), "line", data.draft.source);
+        for (const it of data.items || []) add(String(it.hassaniya || ""), "line", it.tier);
+        for (const d of data.dialectHints || []) add(String(d.text || ""), "dialect", "dialect_hint");
+        for (const c of data.chips || []) add(String(c.phrase || ""), "chip", c.tier);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      setSourcePhrases(words.slice(0, 28));
+    } catch {
+      setSourcePhrases([]);
+    } finally {
+      setSourceBusy(false);
+    }
   }, []);
 
-  useEffect(() => {
-    if (!prompt?.text) {
-      setSuggestions([]);
-      setDraft(null);
-      setMatchedTemplates([]);
-      setDialectHints([]);
-      return;
-    }
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      void (async () => {
-        setSuggestBusy(true);
-        setDraftRejected(false);
-        try {
-          const res = await fetch(
-            `/api/contribute/assist?q=${encodeURIComponent(prompt.text)}&limit=3`,
-          );
-          const data = await res.json();
-          if (cancelled || !res.ok) return;
-          setSuggestions(
-            Array.isArray(data.items)
-              ? data.items
-                  .map((it: SuggestItem) => ({
-                    hassaniya: String(it.hassaniya || "").trim(),
-                    tier: it.tier,
-                    score: it.score,
-                  }))
-                  .filter((it: SuggestItem) => it.hassaniya.length >= 2)
-              : [],
-          );
-          setMatchedTemplates(Array.isArray(data.templates) ? data.templates : []);
-          setDialectHints(
-            Array.isArray(data.dialectHints)
-              ? data.dialectHints
-                  .map((d: DialectHint) => ({
-                    text: String(d.text || "").trim(),
-                    dialect: d.dialect,
-                    flag: d.flag,
-                  }))
-                  .filter((d: DialectHint) => d.text.length >= 2)
-              : [],
-          );
-          const d = data.draft;
-          if (d && typeof d.text === "string" && d.text.trim().length >= 2) {
-            setDraft({
-              text: d.text.trim(),
-              source: d.source,
-              fixed: d.fixed || "",
-              slot: d.slot || "",
-              has_slot: Boolean(d.has_slot),
-              pattern: d.pattern,
-            });
-            setSlotEdit(String(d.slot || "").trim());
-          } else {
-            setDraft(null);
-            setSlotEdit("");
-          }
-        } catch {
-          if (!cancelled) {
-            setSuggestions([]);
-            setDraft(null);
-          }
-        } finally {
-          if (!cancelled) setSuggestBusy(false);
-        }
-      })();
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [prompt?.id, prompt?.text]);
+  async function toggleFromSource() {
+    const next = !showFromSource;
+    setShowFromSource(next);
+    if (next && prompt?.text) await loadFromSource(prompt.text);
+  }
 
-  function insertChip(phrase: string) {
+  async function toggleMyRepeats() {
+    const next = !showMyRepeats;
+    setShowMyRepeats(next);
+    if (!next || mineLoaded) return;
+    setMineBusy(true);
+    try {
+      const res = await fetch("/api/contribute/assist?mine=1&limit=40");
+      const data = await res.json();
+      setMyPhrases(
+        Array.isArray(data.phrases)
+          ? data.phrases
+              .map((p: AssistPhrase) => ({
+                phrase: String(p.phrase || "").trim(),
+                count: p.count,
+                tier: "mine",
+              }))
+              .filter((p: AssistPhrase) => p.phrase.length >= 2)
+          : [],
+      );
+      setMineLoaded(true);
+    } catch {
+      setMyPhrases([]);
+    } finally {
+      setMineBusy(false);
+    }
+  }
+
+  function insertPhrase(phrase: string) {
     setHassaniya((prev) => {
       const cur = prev.trim();
       if (!cur) return phrase;
       if (cur.includes(phrase)) return cur;
       return `${cur} ${phrase}`.replace(/\s+/g, " ").trim();
     });
-    setDraftRejected(false);
-  }
-
-  function applyTemplate(pattern: string, acceptAsIs?: boolean) {
-    if (acceptAsIs || !pattern.includes("[X]")) {
-      setHassaniya(pattern.replace("[X]", "").trim());
-      setSlotEdit("");
-      setDraft(null);
-      return;
-    }
-    setDraft({
-      text: pattern,
-      source: "template",
-      fixed: pattern.replace("[X]", "").trim(),
-      slot: "",
-      has_slot: true,
-      pattern,
-    });
-    setSlotEdit("");
-    setHassaniya("");
-    setDraftRejected(false);
-  }
-
-  function acceptDraft() {
-    if (!draft) return;
-    let text = draft.text;
-    if (draft.has_slot && draft.pattern?.includes("[X]")) {
-      const slot = slotEdit.trim();
-      text = slot ? draft.pattern.replace("[X]", slot) : draft.pattern.replace(/\s*\[X\]\s*/, " ").trim();
-    }
-    setHassaniya(text.replace(/\s+/g, " ").trim());
-    setDraft(null);
-    setDraftRejected(false);
     window.setTimeout(() => textareaRef.current?.focus(), 0);
-  }
-
-  function editDraft() {
-    if (!draft) return;
-    let text = draft.text;
-    if (draft.has_slot && draft.pattern?.includes("[X]")) {
-      const slot = slotEdit.trim();
-      text = slot ? draft.pattern.replace("[X]", slot) : draft.text;
-    }
-    setHassaniya(text.replace(/\s+/g, " ").trim());
-    setDraft(null);
-    setDraftRejected(false);
-    window.setTimeout(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      const fixed = (draft.fixed || "").trim();
-      if (fixed && el.value.startsWith(fixed)) {
-        el.setSelectionRange(fixed.length, el.value.length);
-      } else {
-        el.setSelectionRange(el.value.length, el.value.length);
-      }
-    }, 0);
-  }
-
-  function rejectDraft() {
-    setDraft(null);
-    setDraftRejected(true);
-    setSlotEdit("");
-    setHassaniya("");
-  }
-
-  function applySuggestion(text: string) {
-    setHassaniya(text);
-    setDraft(null);
-    setDraftRejected(false);
   }
 
   async function switchView(loc: (typeof VIEW_LOCALES)[number]) {
@@ -482,163 +347,125 @@ export function ContributeClient({
 
           <section style={{ marginTop: "auto" }}>
             <p className="type-label text-[var(--muted)]" style={{ marginBottom: "var(--space-2)" }}>
-              Your Hassaniya — draft, templates, chips, type, or speak
+              Your Hassaniya — tap helpers (optional), then type or speak
             </p>
 
-            {draft && !draftRejected ? (
+            <div
+              className="flex flex-wrap"
+              style={{ gap: "var(--space-2)", marginBottom: "var(--space-2)" }}
+            >
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{
+                  flex: "1 1 10rem",
+                  minHeight: "2.75rem",
+                  borderColor: showFromSource ? "var(--accent)" : undefined,
+                  color: showFromSource ? "var(--accent)" : undefined,
+                }}
+                disabled={voiceLocked || !prompt}
+                onClick={() => void toggleFromSource()}
+              >
+                {showFromSource ? "Hide · From source" : "From source"}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                style={{
+                  flex: "1 1 10rem",
+                  minHeight: "2.75rem",
+                  borderColor: showMyRepeats ? "var(--accent)" : undefined,
+                  color: showMyRepeats ? "var(--accent)" : undefined,
+                }}
+                disabled={voiceLocked}
+                onClick={() => void toggleMyRepeats()}
+              >
+                {showMyRepeats ? "Hide · My repeats" : "My repeats"}
+              </button>
+            </div>
+
+            {showFromSource ? (
               <div
-                className="border border-[var(--line)] bg-black/20"
+                className="border border-[var(--line)] bg-black/15"
                 style={{
                   marginBottom: "var(--space-3)",
                   borderRadius: "var(--radius)",
                   padding: "var(--space-3)",
+                  maxHeight: "min(40vh, 16rem)",
+                  overflowY: "auto",
                 }}
               >
-                <p className="type-label text-[var(--teal)]" style={{ marginBottom: "0.35rem" }}>
-                  Draft · {draft.source || "suggest"} — Accept / Edit / Reject
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.5rem" }}>
+                  Hassaniya / similar — tap to insert, then edit in the box
                 </p>
-                <p className="type-ui" dir="auto" style={{ marginBottom: "0.5rem", lineHeight: 1.5 }}>
-                  {draft.has_slot && draft.pattern?.includes("[X]") ? (
-                    <>
-                      <span className="text-[var(--muted)]">{draft.pattern.split("[X]")[0]}</span>
-                      <mark
+                {sourceBusy ? (
+                  <p className="text-sm text-[var(--muted)]">Loading…</p>
+                ) : sourcePhrases.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">No suggestions for this line yet.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {sourcePhrases.map((p) => (
+                      <button
+                        key={`${p.kind}-${p.phrase}`}
+                        type="button"
+                        className="rounded-full border border-[var(--line)] bg-black/25 px-3 py-1.5 text-sm leading-snug text-[var(--ink)]"
                         style={{
-                          background: "rgba(45, 212, 191, 0.25)",
-                          color: "inherit",
-                          padding: "0 0.2em",
-                          borderRadius: "0.25rem",
+                          maxWidth: "100%",
+                          borderStyle: p.kind === "dialect" ? "dashed" : "solid",
                         }}
+                        title={
+                          p.kind === "dialect"
+                            ? "Dialect hint — rewrite toward Mauritanian Hassaniya"
+                            : "Insert into input"
+                        }
+                        onClick={() => insertPhrase(p.phrase)}
                       >
-                        {slotEdit.trim() || "[X]"}
-                      </mark>
-                      <span className="text-[var(--muted)]">{draft.pattern.split("[X]")[1] || ""}</span>
-                    </>
-                  ) : draft.fixed ? (
-                    <>
-                      <span className="text-[var(--muted)]">{draft.fixed} </span>
-                      <mark
-                        style={{
-                          background: "rgba(45, 212, 191, 0.25)",
-                          color: "inherit",
-                          padding: "0 0.2em",
-                          borderRadius: "0.25rem",
-                        }}
+                        <span dir="auto">{p.phrase}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {showMyRepeats ? (
+              <div
+                className="border border-[var(--line)] bg-black/15"
+                style={{
+                  marginBottom: "var(--space-3)",
+                  borderRadius: "var(--radius)",
+                  padding: "var(--space-3)",
+                  maxHeight: "min(40vh, 16rem)",
+                  overflowY: "auto",
+                }}
+              >
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.5rem" }}>
+                  Your repeated Hassaniya — tap to insert, then edit
+                </p>
+                {mineBusy ? (
+                  <p className="text-sm text-[var(--muted)]">Loading…</p>
+                ) : myPhrases.length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">
+                    No repeats yet — after you submit a few lines, frequent words show here.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {myPhrases.map((p) => (
+                      <button
+                        key={`mine-${p.phrase}`}
+                        type="button"
+                        className="rounded-full border border-[var(--line)] bg-black/25 px-3 py-1.5 text-sm leading-snug text-[var(--ink)]"
+                        style={{ maxWidth: "100%" }}
+                        onClick={() => insertPhrase(p.phrase)}
                       >
-                        {draft.text.startsWith(draft.fixed)
-                          ? draft.text.slice(draft.fixed.length).trim() || "…"
-                          : draft.text}
-                      </mark>
-                    </>
-                  ) : (
-                    draft.text
-                  )}
-                </p>
-                {draft.has_slot ? (
-                  <input
-                    className="field-input mb-2 w-full"
-                    dir="auto"
-                    placeholder="Fill [X] only — e.g. تحويله من الصين"
-                    value={slotEdit}
-                    onChange={(e) => setSlotEdit(e.target.value)}
-                  />
-                ) : null}
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" className="btn-primary" onClick={acceptDraft}>
-                    Accept
-                  </button>
-                  <button type="button" className="btn-ghost" onClick={editDraft}>
-                    Edit
-                  </button>
-                  <button type="button" className="btn-ghost" onClick={rejectDraft}>
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ) : suggestBusy ? (
-              <p className="text-sm text-[var(--muted)]" style={{ marginBottom: "var(--space-2)" }}>
-                Looking for a draft…
-              </p>
-            ) : null}
-
-            {(matchedTemplates.length > 0 || templates.length > 0) && (
-              <div style={{ marginBottom: "var(--space-2)" }}>
-                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
-                  Slot templates
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {(matchedTemplates.length > 0 ? matchedTemplates : templates.slice(0, 6)).map((t) => (
-                    <button
-                      key={t.id || t.pattern}
-                      type="button"
-                      className="rounded-full border border-[var(--line)] bg-black/20 px-3 py-1 text-sm"
-                      onClick={() => applyTemplate(t.pattern, t.accept_as_is)}
-                    >
-                      {t.pattern}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {suggestions.length > 0 ? (
-              <div style={{ marginBottom: "var(--space-2)" }}>
-                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
-                  Similar (gold / Hassaniya)
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {suggestions.map((s) => (
-                    <button
-                      key={s.hassaniya}
-                      type="button"
-                      className="btn-ghost"
-                      style={{ fontSize: "0.95rem", padding: "0.45rem 0.75rem" }}
-                      onClick={() => applySuggestion(s.hassaniya)}
-                    >
-                      {s.hassaniya}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {dialectHints.length > 0 ? (
-              <div style={{ marginBottom: "var(--space-2)" }}>
-                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
-                  Dialect hint (Tunisian — edit to Hassaniya)
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {dialectHints.map((d) => (
-                    <button
-                      key={d.text}
-                      type="button"
-                      className="rounded-full border border-dashed border-[var(--line)] px-3 py-1 text-sm text-[var(--muted)]"
-                      onClick={() => applySuggestion(d.text)}
-                      title="Scaffolding only — rewrite into Mauritanian Hassaniya"
-                    >
-                      {d.text}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {chips.length > 0 ? (
-              <div style={{ marginBottom: "var(--space-3)" }}>
-                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
-                  Phrase chips
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {chips.map((c) => (
-                    <button
-                      key={c.phrase}
-                      type="button"
-                      className="rounded-full border border-[var(--line)] bg-black/20 px-3 py-1 text-sm text-[var(--ink)]"
-                      onClick={() => insertChip(c.phrase)}
-                    >
-                      {c.phrase}
-                    </button>
-                  ))}
-                </div>
+                        <span dir="auto">{p.phrase}</span>
+                        {p.count && p.count > 1 ? (
+                          <span className="ml-1 text-[var(--muted)]">×{p.count}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : null}
 
@@ -722,7 +549,7 @@ export function ContributeClient({
               className="text-[var(--muted)]"
               style={{ marginTop: "var(--space-2)", fontSize: "var(--label-text)" }}
             >
-              Skip does not count as progress. Accept a draft, fill [X], or type/voice → Next.
+              Skip does not count. Optional: From source / My repeats → tap chips → edit → Next.
             </p>
           </section>
         </div>
