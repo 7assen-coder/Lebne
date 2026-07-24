@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from api.config import Settings, get_settings
 from api.security.rate_limit import rate_limiter
+from contrib.assist_util import build_draft, load_chips
 from contrib.audio_service import (
     asset_out,
     can_access_audio,
@@ -552,6 +553,32 @@ def progress(
     db: Annotated[Session, Depends(get_contrib_session)],
 ) -> dict:
     return {"progress": _progress(db, user.id), "targetLocale": TARGET_LOCALE}
+
+
+@router.get("/assist/chips")
+def assist_chips(user: Annotated[CrowdUser, Depends(get_crowd_user)]) -> dict:
+    """Phrase chips + slot templates for Contribute."""
+    _ = user
+    data = load_chips()
+    return {"ok": True, **data}
+
+
+@router.get("/assist/suggest")
+def assist_suggest(
+    user: Annotated[CrowdUser, Depends(get_crowd_user)],
+    q: str = "",
+    limit: int = 3,
+) -> dict:
+    """Suggestion-only drafts: similar pairs, templates, dialect hints, optional Ollama."""
+    _ = user
+    text = (q or "").strip()
+    if len(text) < 2:
+        return {"ok": True, "draft": None, "items": [], "templates": [], "dialectHints": []}
+    lim = max(1, min(int(limit or 3), 5))
+    payload = build_draft(text)
+    # Respect limit on similar items
+    payload["items"] = (payload.get("items") or [])[:lim]
+    return {"ok": True, **payload}
 
 
 @router.post("/audio/presign")

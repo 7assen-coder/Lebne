@@ -62,6 +62,43 @@ python scripts/export_mru_locale_jsonl.py                 # source + cached view
 python scripts/export_mru_locale_jsonl.py --fill-missing-views  # same as web download
 ```
 
+## Contribute assist (chips + templates + OOD)
+
+Final plan — scrub:
+
+**Banking / queue:** `imported_banking.jsonl` (Banking77, ArBanking77 MSA, DarijaBanking MSA)
++ approved `lebne_mru_hassaniya.jsonl`.
+
+**Hassaniya-only:** `Emin009/AI-for-RIM`, `hassan-IA/dah`, `HASSANIYA-DTCD`,
+`hassan-IA/hassaniya-stories-ocr`.
+
+**Dialect hint (optional):** SinaLab ArBanking77 **Tunisian** test — suggestion-only,
+flagged `dialect_hint` (never auto-exported).
+
+```bash
+PYTHONPATH=. python scripts/build_contribute_assist.py
+# local-only (no HF/Zenodo/Tunisian):
+PYTHONPATH=. python scripts/build_contribute_assist.py --skip-hf --skip-dialect-hints
+```
+
+Writes `data/assist/`:
+
+| File | Role |
+|------|------|
+| `phrase_chips.json` | Tap chips + slot templates (`[X]`) |
+| `suggest_pairs.jsonl` | Similar-pair drafts (accept / edit / reject) |
+| `dialect_hints.jsonl` | Tunisian scaffolding (edit to Hassaniya) |
+| `ood_refuse.jsonl` | `out_of_domain` refuse rows for later training |
+
+Chips + slot templates are **mined** from approved Hassaniya (and corpora) at build time —
+not a hardcoded phrase list. OOD rows are **generated** from topic patterns × fillers × locales,
+plus any `out_of_domain` rows already in imports.
+
+Contribute UI: **Draft** (Accept / Edit / Reject) · **slot templates** · chips · similar · dialect hints.
+Optional Ollama draft: set `LEBNE_ASSIST_USE_OLLAMA=1` (local) or `LEBNE_ASSIST_OLLAMA_BASE`.
+
+Re-run the build script after more crowd approvals to refresh chips/templates.
+
 ## FAQ JSONL (`data/faq/faq.jsonl`)
 
 | Field | Type |

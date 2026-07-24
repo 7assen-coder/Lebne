@@ -18,6 +18,29 @@ type Prompt = {
 
 type Progress = { done: number; total: number; percent: number };
 
+type Chip = { phrase: string; tier?: string };
+
+type Template = {
+  id?: string;
+  pattern: string;
+  fixed?: string;
+  has_slot?: boolean;
+  accept_as_is?: boolean;
+};
+
+type SuggestItem = { hassaniya: string; tier?: string; score?: number };
+
+type DialectHint = { text: string; dialect?: string; flag?: string };
+
+type Draft = {
+  text: string;
+  source?: string;
+  fixed?: string;
+  slot?: string;
+  has_slot?: boolean;
+  pattern?: string;
+};
+
 export function ContributeClient({
   userName,
   isReviewer,
@@ -36,7 +59,17 @@ export function ContributeClient({
   const [doneAll, setDoneAll] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [error, setError] = useState("");
+  const [chips, setChips] = useState<Chip[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [matchedTemplates, setMatchedTemplates] = useState<Template[]>([]);
+  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
+  const [dialectHints, setDialectHints] = useState<DialectHint[]>([]);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draftRejected, setDraftRejected] = useState(false);
+  const [suggestBusy, setSuggestBusy] = useState(false);
+  const [slotEdit, setSlotEdit] = useState("");
   const voiceRef = useRef<VoiceRecorderHandle | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const canSubmit = hassaniya.trim().length >= 2 || Boolean(audioId);
   const voiceLocked = voiceBusy;
@@ -46,6 +79,12 @@ export function ContributeClient({
     setHassaniya("");
     setAudioId(null);
     setError("");
+    setDraft(null);
+    setDraftRejected(false);
+    setSuggestions([]);
+    setMatchedTemplates([]);
+    setDialectHints([]);
+    setSlotEdit("");
     const res = await fetch(`/api/contribute/next?view=${view}`);
     const data = await res.json();
     setLoading(false);
@@ -59,6 +98,195 @@ export function ContributeClient({
     void loadNext(viewLocale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/contribute/assist");
+        const data = await res.json();
+        if (!cancelled && res.ok) {
+          if (Array.isArray(data.chips)) {
+            setChips(
+              data.chips
+                .map((c: Chip) => ({ phrase: String(c.phrase || "").trim(), tier: c.tier }))
+                .filter((c: Chip) => c.phrase.length >= 2)
+                .slice(0, 24),
+            );
+          }
+          if (Array.isArray(data.templates)) {
+            setTemplates(
+              data.templates
+                .map((t: Template) => ({
+                  id: t.id,
+                  pattern: String(t.pattern || "").trim(),
+                  accept_as_is: Boolean(t.accept_as_is),
+                  has_slot: String(t.pattern || "").includes("[X]"),
+                }))
+                .filter((t: Template) => t.pattern.length >= 2),
+            );
+          }
+        }
+      } catch {
+        /* optional assist */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!prompt?.text) {
+      setSuggestions([]);
+      setDraft(null);
+      setMatchedTemplates([]);
+      setDialectHints([]);
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        setSuggestBusy(true);
+        setDraftRejected(false);
+        try {
+          const res = await fetch(
+            `/api/contribute/assist?q=${encodeURIComponent(prompt.text)}&limit=3`,
+          );
+          const data = await res.json();
+          if (cancelled || !res.ok) return;
+          setSuggestions(
+            Array.isArray(data.items)
+              ? data.items
+                  .map((it: SuggestItem) => ({
+                    hassaniya: String(it.hassaniya || "").trim(),
+                    tier: it.tier,
+                    score: it.score,
+                  }))
+                  .filter((it: SuggestItem) => it.hassaniya.length >= 2)
+              : [],
+          );
+          setMatchedTemplates(Array.isArray(data.templates) ? data.templates : []);
+          setDialectHints(
+            Array.isArray(data.dialectHints)
+              ? data.dialectHints
+                  .map((d: DialectHint) => ({
+                    text: String(d.text || "").trim(),
+                    dialect: d.dialect,
+                    flag: d.flag,
+                  }))
+                  .filter((d: DialectHint) => d.text.length >= 2)
+              : [],
+          );
+          const d = data.draft;
+          if (d && typeof d.text === "string" && d.text.trim().length >= 2) {
+            setDraft({
+              text: d.text.trim(),
+              source: d.source,
+              fixed: d.fixed || "",
+              slot: d.slot || "",
+              has_slot: Boolean(d.has_slot),
+              pattern: d.pattern,
+            });
+            setSlotEdit(String(d.slot || "").trim());
+          } else {
+            setDraft(null);
+            setSlotEdit("");
+          }
+        } catch {
+          if (!cancelled) {
+            setSuggestions([]);
+            setDraft(null);
+          }
+        } finally {
+          if (!cancelled) setSuggestBusy(false);
+        }
+      })();
+    }, 200);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [prompt?.id, prompt?.text]);
+
+  function insertChip(phrase: string) {
+    setHassaniya((prev) => {
+      const cur = prev.trim();
+      if (!cur) return phrase;
+      if (cur.includes(phrase)) return cur;
+      return `${cur} ${phrase}`.replace(/\s+/g, " ").trim();
+    });
+    setDraftRejected(false);
+  }
+
+  function applyTemplate(pattern: string, acceptAsIs?: boolean) {
+    if (acceptAsIs || !pattern.includes("[X]")) {
+      setHassaniya(pattern.replace("[X]", "").trim());
+      setSlotEdit("");
+      setDraft(null);
+      return;
+    }
+    setDraft({
+      text: pattern,
+      source: "template",
+      fixed: pattern.replace("[X]", "").trim(),
+      slot: "",
+      has_slot: true,
+      pattern,
+    });
+    setSlotEdit("");
+    setHassaniya("");
+    setDraftRejected(false);
+  }
+
+  function acceptDraft() {
+    if (!draft) return;
+    let text = draft.text;
+    if (draft.has_slot && draft.pattern?.includes("[X]")) {
+      const slot = slotEdit.trim();
+      text = slot ? draft.pattern.replace("[X]", slot) : draft.pattern.replace(/\s*\[X\]\s*/, " ").trim();
+    }
+    setHassaniya(text.replace(/\s+/g, " ").trim());
+    setDraft(null);
+    setDraftRejected(false);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }
+
+  function editDraft() {
+    if (!draft) return;
+    let text = draft.text;
+    if (draft.has_slot && draft.pattern?.includes("[X]")) {
+      const slot = slotEdit.trim();
+      text = slot ? draft.pattern.replace("[X]", slot) : draft.text;
+    }
+    setHassaniya(text.replace(/\s+/g, " ").trim());
+    setDraft(null);
+    setDraftRejected(false);
+    window.setTimeout(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      const fixed = (draft.fixed || "").trim();
+      if (fixed && el.value.startsWith(fixed)) {
+        el.setSelectionRange(fixed.length, el.value.length);
+      } else {
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    }, 0);
+  }
+
+  function rejectDraft() {
+    setDraft(null);
+    setDraftRejected(true);
+    setSlotEdit("");
+    setHassaniya("");
+  }
+
+  function applySuggestion(text: string) {
+    setHassaniya(text);
+    setDraft(null);
+    setDraftRejected(false);
+  }
 
   async function switchView(loc: (typeof VIEW_LOCALES)[number]) {
     if (loc === viewLocale && prompt) return;
@@ -254,8 +482,165 @@ export function ContributeClient({
 
           <section style={{ marginTop: "auto" }}>
             <p className="type-label text-[var(--muted)]" style={{ marginBottom: "var(--space-2)" }}>
-              Your Hassaniya — type, speak, or both
+              Your Hassaniya — draft, templates, chips, type, or speak
             </p>
+
+            {draft && !draftRejected ? (
+              <div
+                className="border border-[var(--line)] bg-black/20"
+                style={{
+                  marginBottom: "var(--space-3)",
+                  borderRadius: "var(--radius)",
+                  padding: "var(--space-3)",
+                }}
+              >
+                <p className="type-label text-[var(--teal)]" style={{ marginBottom: "0.35rem" }}>
+                  Draft · {draft.source || "suggest"} — Accept / Edit / Reject
+                </p>
+                <p className="type-ui" dir="auto" style={{ marginBottom: "0.5rem", lineHeight: 1.5 }}>
+                  {draft.has_slot && draft.pattern?.includes("[X]") ? (
+                    <>
+                      <span className="text-[var(--muted)]">{draft.pattern.split("[X]")[0]}</span>
+                      <mark
+                        style={{
+                          background: "rgba(45, 212, 191, 0.25)",
+                          color: "inherit",
+                          padding: "0 0.2em",
+                          borderRadius: "0.25rem",
+                        }}
+                      >
+                        {slotEdit.trim() || "[X]"}
+                      </mark>
+                      <span className="text-[var(--muted)]">{draft.pattern.split("[X]")[1] || ""}</span>
+                    </>
+                  ) : draft.fixed ? (
+                    <>
+                      <span className="text-[var(--muted)]">{draft.fixed} </span>
+                      <mark
+                        style={{
+                          background: "rgba(45, 212, 191, 0.25)",
+                          color: "inherit",
+                          padding: "0 0.2em",
+                          borderRadius: "0.25rem",
+                        }}
+                      >
+                        {draft.text.startsWith(draft.fixed)
+                          ? draft.text.slice(draft.fixed.length).trim() || "…"
+                          : draft.text}
+                      </mark>
+                    </>
+                  ) : (
+                    draft.text
+                  )}
+                </p>
+                {draft.has_slot ? (
+                  <input
+                    className="field-input mb-2 w-full"
+                    dir="auto"
+                    placeholder="Fill [X] only — e.g. تحويله من الصين"
+                    value={slotEdit}
+                    onChange={(e) => setSlotEdit(e.target.value)}
+                  />
+                ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className="btn-primary" onClick={acceptDraft}>
+                    Accept
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={editDraft}>
+                    Edit
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={rejectDraft}>
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ) : suggestBusy ? (
+              <p className="text-sm text-[var(--muted)]" style={{ marginBottom: "var(--space-2)" }}>
+                Looking for a draft…
+              </p>
+            ) : null}
+
+            {(matchedTemplates.length > 0 || templates.length > 0) && (
+              <div style={{ marginBottom: "var(--space-2)" }}>
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
+                  Slot templates
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(matchedTemplates.length > 0 ? matchedTemplates : templates.slice(0, 6)).map((t) => (
+                    <button
+                      key={t.id || t.pattern}
+                      type="button"
+                      className="rounded-full border border-[var(--line)] bg-black/20 px-3 py-1 text-sm"
+                      onClick={() => applyTemplate(t.pattern, t.accept_as_is)}
+                    >
+                      {t.pattern}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {suggestions.length > 0 ? (
+              <div style={{ marginBottom: "var(--space-2)" }}>
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
+                  Similar (gold / Hassaniya)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.hassaniya}
+                      type="button"
+                      className="btn-ghost"
+                      style={{ fontSize: "0.95rem", padding: "0.45rem 0.75rem" }}
+                      onClick={() => applySuggestion(s.hassaniya)}
+                    >
+                      {s.hassaniya}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {dialectHints.length > 0 ? (
+              <div style={{ marginBottom: "var(--space-2)" }}>
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
+                  Dialect hint (Tunisian — edit to Hassaniya)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {dialectHints.map((d) => (
+                    <button
+                      key={d.text}
+                      type="button"
+                      className="rounded-full border border-dashed border-[var(--line)] px-3 py-1 text-sm text-[var(--muted)]"
+                      onClick={() => applySuggestion(d.text)}
+                      title="Scaffolding only — rewrite into Mauritanian Hassaniya"
+                    >
+                      {d.text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {chips.length > 0 ? (
+              <div style={{ marginBottom: "var(--space-3)" }}>
+                <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.35rem" }}>
+                  Phrase chips
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {chips.map((c) => (
+                    <button
+                      key={c.phrase}
+                      type="button"
+                      className="rounded-full border border-[var(--line)] bg-black/20 px-3 py-1 text-sm text-[var(--ink)]"
+                      onClick={() => insertChip(c.phrase)}
+                    >
+                      {c.phrase}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="action-grid">
               <div className="action-tile" data-kind="type" data-active={hassaniya.trim().length >= 2}>
@@ -263,7 +648,7 @@ export function ContributeClient({
                   <div>
                     <p className="type-label text-[var(--accent)]">Type</p>
                     <p className="type-ui text-[var(--muted)]" style={{ marginTop: "0.25rem" }}>
-                      Write the Hassaniya here
+                      Write or finish the Hassaniya here
                     </p>
                   </div>
                   <span
@@ -278,6 +663,7 @@ export function ContributeClient({
                   </span>
                 </div>
                 <textarea
+                  ref={textareaRef}
                   className="field-input type-panel min-h-[8rem] resize-none border-0 bg-black/25 focus:shadow-none"
                   style={{ minHeight: "clamp(7rem, 5rem + 12vw, 14rem)" }}
                   dir="auto"
@@ -336,7 +722,7 @@ export function ContributeClient({
               className="text-[var(--muted)]"
               style={{ marginTop: "var(--space-2)", fontSize: "var(--label-text)" }}
             >
-              Skip does not count as progress. Type, voice, or both → Next.
+              Skip does not count as progress. Accept a draft, fill [X], or type/voice → Next.
             </p>
           </section>
         </div>
