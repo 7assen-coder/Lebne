@@ -520,8 +520,8 @@ def main() -> int:
     parser.add_argument(
         "--max-suggest-pairs",
         type=int,
-        default=1500,
-        help="Cap suggest_pairs.jsonl (gold kept first, then corpus)",
+        default=2500,
+        help="Cap suggest_pairs.jsonl (gold kept first, then Hassaniya corpora)",
     )
     parser.add_argument(
         "--skip-dialect-hints",
@@ -616,6 +616,59 @@ def main() -> int:
             it["tier"] = "hassaniya_corpus"
             chip_rows.append(it)
 
+    # Monolingual Hassaniya lines for From-source matching (RIM / DAH / DTCD / stories + gold)
+    all_hs_lines = list(gold_texts) + list(hs_texts)
+    hs_lines_path = out_dir / "hassaniya_lines.jsonl"
+    hs_line_n = 0
+    with hs_lines_path.open("w", encoding="utf-8") as fh:
+        seen_hs: set[str] = set()
+        for t in all_hs_lines:
+            line = (t or "").strip()
+            if len(line) < 4 or line in seen_hs:
+                continue
+            seen_hs.add(line)
+            fh.write(
+                json.dumps(
+                    {
+                        "text": line,
+                        "tier": "hassaniya_corpus",
+                        "source": "hassaniya_corpora",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            hs_line_n += 1
+            if hs_line_n >= 2500:
+                break
+
+    # Banking Arabic (MSA) hints from imported Banking77 / ArBanking77
+    banking_path = out_dir / "banking_ar_hints.jsonl"
+    banking_n = 0
+    with banking_path.open("w", encoding="utf-8") as fh:
+        seen_b: set[str] = set()
+        for t in banking_ar:
+            line = (t or "").strip()
+            if len(line) < 4 or line in seen_b:
+                continue
+            if not _arabic_tokens(line):
+                continue
+            seen_b.add(line)
+            fh.write(
+                json.dumps(
+                    {
+                        "text": line,
+                        "tier": "banking",
+                        "source": "imported_banking",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            banking_n += 1
+            if banking_n >= 2000:
+                break
+
     chips = dedupe_chips(chip_rows)
     # Prefer gold then banking then corpus; keep top 80
     tier_rank = {"gold": 0, "banking": 1, "hassaniya_corpus": 2}
@@ -697,6 +750,8 @@ def main() -> int:
     print(f"  {chips_path}  ({len(chips)} chips, {len(templates)} templates)")
     print(f"  {pairs_path}  ({len(suggest_pairs)} pairs)")
     print(f"  {dialect_path}  ({dialect_n} dialect hints)")
+    print(f"  {hs_lines_path}  ({hs_line_n} Hassaniya lines)")
+    print(f"  {banking_path}  ({banking_n} banking AR hints)")
     print(f"  {ood_path}  ({len(ood_clean)} OOD rows)")
     print(f"  gold Hassaniya lines mined: {len(gold_texts)}")
     print(f"  banking user lines scanned: {len(banking_users)}")

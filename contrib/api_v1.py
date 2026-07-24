@@ -577,7 +577,7 @@ def assist_suggest(
     lim = max(1, min(int(limit or 3), 5))
     payload = build_draft(text)
     payload["items"] = (payload.get("items") or [])[:lim]
-    payload["sourceWords"] = source_word_suggestions(text, limit=20)
+    payload["sourceWords"] = source_word_suggestions(text, limit=28)
     return {"ok": True, **payload}
 
 

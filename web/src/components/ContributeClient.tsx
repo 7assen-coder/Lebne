@@ -99,6 +99,8 @@ export function ContributeClient({
         };
         if (data.draft?.text) add(String(data.draft.text), "line", data.draft.source);
         for (const it of data.items || []) add(String(it.hassaniya || ""), "line", it.tier);
+        for (const h of data.hassaniyaLines || []) add(String(h.text || ""), "line", "hassaniya_corpus");
+        for (const b of data.bankingHints || []) add(String(b.text || ""), "banking", "banking");
         for (const d of data.dialectHints || []) add(String(d.text || ""), "dialect", "dialect_hint");
         for (const c of data.chips || []) add(String(c.phrase || ""), "chip", c.tier);
       }
@@ -396,7 +398,7 @@ export function ContributeClient({
                 }}
               >
                 <p className="type-label text-[var(--muted)]" style={{ marginBottom: "0.5rem" }}>
-                  Hassaniya / similar — tap to insert, then edit in the box
+                  RIM / DAH / DTCD / stories + banking Arabic — tap to insert, then edit
                 </p>
                 {sourceBusy ? (
                   <p className="text-sm text-[var(--muted)]">Loading…</p>
@@ -404,25 +406,35 @@ export function ContributeClient({
                   <p className="text-sm text-[var(--muted)]">No suggestions for this line yet.</p>
                 ) : (
                   <div className="flex flex-wrap gap-2">
-                    {sourcePhrases.map((p) => (
-                      <button
-                        key={`${p.kind}-${p.phrase}`}
-                        type="button"
-                        className="rounded-full border border-[var(--line)] bg-black/25 px-3 py-1.5 text-sm leading-snug text-[var(--ink)]"
-                        style={{
-                          maxWidth: "100%",
-                          borderStyle: p.kind === "dialect" ? "dashed" : "solid",
-                        }}
-                        title={
-                          p.kind === "dialect"
-                            ? "Dialect hint — rewrite toward Mauritanian Hassaniya"
-                            : "Insert into input"
-                        }
-                        onClick={() => insertPhrase(p.phrase)}
-                      >
-                        <span dir="auto">{p.phrase}</span>
-                      </button>
-                    ))}
+                    {sourcePhrases.map((p) => {
+                      const tier = p.tier || "";
+                      const isBanking = tier === "banking" || p.kind === "banking";
+                      const isDialect = tier === "dialect_hint" || p.kind === "dialect";
+                      return (
+                        <button
+                          key={`${p.kind}-${p.phrase}`}
+                          type="button"
+                          className="rounded-full border border-[var(--line)] bg-black/25 px-3 py-1.5 text-sm leading-snug text-[var(--ink)]"
+                          style={{
+                            maxWidth: "100%",
+                            borderStyle: isDialect || isBanking ? "dashed" : "solid",
+                            opacity: isBanking ? 0.92 : 1,
+                          }}
+                          title={
+                            isBanking
+                              ? "Banking Arabic — adapt into Mauritanian Hassaniya"
+                              : isDialect
+                                ? "Dialect hint — rewrite toward Mauritanian Hassaniya"
+                                : tier === "hassaniya_corpus"
+                                  ? "Hassaniya corpus (RIM / DAH / DTCD / stories)"
+                                  : "Insert into input"
+                          }
+                          onClick={() => insertPhrase(p.phrase)}
+                        >
+                          <span dir="auto">{p.phrase}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
